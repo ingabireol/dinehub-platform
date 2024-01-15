@@ -1,0 +1,10 @@
+# Default owner for everything.
+*                           @olivier-ingabire
+
+# The pieces where a mistake is most expensive get called out explicitly, so a
+# review of them is never incidental.
+/.github/workflows/         @olivier-ingabire
+/deploy/helm/               @olivier-ingabire
+/deploy/helm/values-prod.yaml @olivier-ingabire
+/services/*/src/main/resources/db/migration/ @olivier-ingabire
+/SECURITY.md                @olivier-ingabire

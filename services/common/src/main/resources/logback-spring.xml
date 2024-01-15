@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging for every DineHub service.
+
+  JSON to stdout, always. Two reasons: the container runtime collects stdout
+  without any file handling, and Loki can index structured fields rather than
+  regex-matching a line format that drifts between services.
+
+  The `local` profile gets human-readable output instead, because nobody wants
+  to read JSON while developing.
+-->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <springProperty scope="context" name="serviceName" source="spring.application.name"
+                  defaultValue="unknown"/>
+  <springProperty scope="context" name="activeProfile" source="spring.profiles.active"
+                  defaultValue="local"/>
+
+  <springProfile name="local">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder>
+        <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %cyan(%logger{28}) [%X{traceId:-}] - %msg%n</pattern>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="!local">
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <customFields>{"service":"${serviceName}","environment":"${activeProfile}"}</customFields>
+        <fieldNames>
+          <timestamp>timestamp</timestamp>
+          <message>message</message>
+          <logger>logger</logger>
+          <thread>thread</thread>
+          <levelValue>[ignore]</levelValue>
+          <version>[ignore]</version>
+        </fieldNames>
+        <!-- traceId comes from the MDC, set by TraceIdFilter. It is the field
+             that links a user-facing error to these lines. -->
+        <includeMdcKeyName>traceId</includeMdcKeyName>
+        <includeMdcKeyName>userId</includeMdcKeyName>
+        <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+          <maxDepthPerThrowable>25</maxDepthPerThrowable>
+          <maxLength>4096</maxLength>
+          <shortenedClassNameLength>40</shortenedClassNameLength>
+          <rootCauseFirst>true</rootCauseFirst>
+        </throwableConverter>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+
+  <logger name="com.dinehub" level="${LOG_LEVEL_DINEHUB:-INFO}"/>
+  <!-- Noisy at INFO and says nothing useful in normal operation. -->
+  <logger name="org.springframework.amqp.rabbit.connection" level="WARN"/>
+  <logger name="org.hibernate.engine.jdbc.spi.SqlExceptionHelper" level="ERROR"/>
+</configuration>

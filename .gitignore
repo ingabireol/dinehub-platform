@@ -1,0 +1,48 @@
+# Build output
+target/
+dist/
+build/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+*.war
+
+# Node
+node_modules/
+.angular/
+npm-debug.log*
+.eslintcache
+
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets.yaml
+secrets.yml
+kubeconfig*
+!kubeconfig.example
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test and coverage output
+.jacoco/
+coverage/
+*.exec
+surefire-reports/
+failsafe-reports/
+
+# Local Kubernetes
+clab-*/
+.kube/

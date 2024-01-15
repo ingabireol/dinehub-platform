@@ -1,0 +1,163 @@
+# ---------------------------------------------------------------------------
+# Full local stack.
+#
+#   make up     →  http://localhost  with seeded menu and demo users
+#
+# One PostgreSQL container hosting a database per service, rather than seven
+# containers. Database-per-service is preserved (separate schemas, separate
+# credentials, no cross-database queries) without asking a laptop to run seven
+# Postgres instances. docs/ENVIRONMENTS.md records that production uses
+# dedicated instances.
+# ---------------------------------------------------------------------------
+name: dinehub
+
+# Host ports are overridable. A laptop with its own PostgreSQL or Redis already
+# running should not have to edit this file to run the stack — set the variable
+# in .env instead. The container-side ports never change.
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [dinehub]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-java-env: &java-env
+  SPRING_PROFILES_ACTIVE: local
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: dinehub
+  DB_PASSWORD: dinehub
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: 5672
+  RABBITMQ_USER: dinehub
+  RABBITMQ_PASSWORD: dinehub
+  # Local only. Every deployed environment injects this from a Kubernetes
+  # Secret; see deploy/helm and docs/SECURITY.md.
+  JWT_SECRET: local-development-signing-key-not-for-any-real-use
+  LOG_LEVEL: DEBUG
+
+services:
+
+  # --- Infrastructure ------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    <<: *service-defaults
+    environment:
+      POSTGRES_USER: dinehub
+      POSTGRES_PASSWORD: dinehub
+      POSTGRES_DB: dinehub_auth
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    ports:
+      # Loopback only. Useful for psql from the host, not reachable from the
+      # network you happen to be on.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dinehub -d dinehub_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    <<: *service-defaults
+    environment:
+      RABBITMQ_DEFAULT_USER: dinehub
+      RABBITMQ_DEFAULT_PASS: dinehub
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT_HOST:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_UI_PORT:-15672}:15672"   # management UI — useful for watching the DLQ
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    <<: *service-defaults
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Deliberately not published. Only the gateway uses it, over the compose
+    # network — and an unauthenticated Redis listening on 0.0.0.0 is a poor
+    # default even locally.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Application services -------------------------------------------------
+  auth-service:
+    build:
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+    image: dinehub/auth-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_auth
+      SERVER_PORT: 8081
+    ports:
+      - "127.0.0.1:${AUTH_PORT:-8081}:8081"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  menu-service:
+    build:
+      context: ..
+      dockerfile: services/menu-service/Dockerfile
+    image: dinehub/menu-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_menu
+      SERVER_PORT: 8082
+    ports:
+      - "127.0.0.1:${MENU_PORT:-8082}:8082"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: services/api-gateway/Dockerfile
+    image: dinehub/api-gateway:local
+    <<: *service-defaults
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8080
+      JWT_SECRET: local-development-signing-key-not-for-any-real-use
+      REDIS_HOST: redis
+      # Service names, resolved by the compose network. In Kubernetes these
+      # become Service DNS names — the same mechanism, different resolver, and
+      # no discovery server in either case.
+      AUTH_SERVICE_URL: http://auth-service:8081
+      MENU_SERVICE_URL: http://menu-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+      PAYMENT_SERVICE_URL: http://payment-service:8084
+      KITCHEN_SERVICE_URL: http://kitchen-service:8085
+      NOTIFICATION_SERVICE_URL: http://notification-service:8086
+      CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:4200
+      LOG_LEVEL: DEBUG
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      redis: { condition: service_healthy }
+      auth-service: { condition: service_started }
+      menu-service: { condition: service_started }
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+
+networks:
+  dinehub:
+    driver: bridge

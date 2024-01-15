@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DineHub parent POM.
+
+  Everything shared between services lives here: the Spring Boot version, the
+  Java version, the plugin configuration and the coverage gate. A service POM
+  should contain only the dependencies that service actually uses, so that
+  looking at it tells you something.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.dinehub</groupId>
+  <artifactId>dinehub-parent</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>DineHub Platform</name>
+  <description>Restaurant ordering platform — microservices with a full delivery pipeline</description>
+
+  <!-- Modules are added as each milestone completes, so the reactor always
+       builds. See docs/PIPELINE.md for the milestone order. -->
+  <modules>
+    <module>services/common</module>
+    <module>services/api-gateway</module>
+    <module>services/auth-service</module>
+    <module>services/menu-service</module>
+  </modules>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <springdoc.version>2.8.6</springdoc.version>
+    <jjwt.version>0.12.6</jjwt.version>
+    <testcontainers.version>1.20.4</testcontainers.version>
+    <logstash-encoder.version>8.0</logstash-encoder.version>
+
+    <jacoco.version>0.8.12</jacoco.version>
+    <!-- The coverage gate. 70% is the number the pipeline enforces; it is set
+         here rather than in CI so that `mvn verify` locally fails for the same
+         reason the pipeline does. -->
+    <jacoco.line.coverage>0.70</jacoco.line.coverage>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.dinehub</groupId>
+        <artifactId>common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Every service is tested. No exceptions, so it belongs here. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <!-- Integration tests are Testcontainers-based and slow; they run in
+                 a separate phase so a unit-test failure is reported in seconds. -->
+            <excludes>
+              <exclude>**/*IT.java</exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <configuration>
+            <includes>
+              <include>**/*IT.java</include>
+            </includes>
+          </configuration>
+          <executions>
+            <execution>
+              <goals>
+                <goal>integration-test</goal>
+                <goal>verify</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals><goal>prepare-agent</goal></goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals><goal>report</goal></goals>
+          </execution>
+          <execution>
+            <id>coverage-gate</id>
+            <phase>verify</phase>
+            <goals><goal>check</goal></goals>
+            <configuration>
+              <haltOnFailure>true</haltOnFailure>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${jacoco.line.coverage}</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+              <!--
+                Excluded deliberately and narrowly: only classes with no branch
+                to get wrong. Excluding whole packages (config, entity, web) is
+                how a coverage gate quietly stops measuring anything — it was
+                briefly doing that here, and the gate was passing on two classes.
+              -->
+              <excludes>
+                <!-- main() and the Spring Boot bootstrap. -->
+                <exclude>**/*Application.class</exclude>
+                <!-- Records: constructor and accessors, no logic. -->
+                <exclude>**/dto/**</exclude>
+                <exclude>**/events/**</exclude>
+                <!-- Pure bean declarations with no conditional behaviour. -->
+                <exclude>**/config/OpenApiConfig.class</exclude>
+                <exclude>**/config/RabbitConfig.class</exclude>
+                <exclude>**/config/SecurityConfig.class</exclude>
+                <exclude>**/config/GatewayConfig.class</exclude>
+                <exclude>**/config/CorsConfig.class</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <!-- Skips the coverage gate. Used by the Dockerfile build stage, which
+           has already had the tests run against it in CI. -->
+      <id>fast</id>
+      <properties>
+        <maven.test.skip>true</maven.test.skip>
+        <jacoco.skip>true</jacoco.skip>
+      </properties>
+    </profile>
+  </profiles>
+</project>

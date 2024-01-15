@@ -1,0 +1,187 @@
+# ---------------------------------------------------------------------------
+# API gateway configuration.
+#
+# Routes are defined here rather than in code so that adding a service is a
+# values change, and so the whole routing table is readable in one place.
+#
+# Service hosts come from environment variables: Docker Compose supplies
+# container names, Kubernetes supplies Service names. Neither is hard-coded.
+# ---------------------------------------------------------------------------
+spring:
+  application:
+    name: api-gateway
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # No automatic discovery-based routing. Routes are explicit so that an
+          # unexpected service cannot become publicly reachable by starting up.
+          discovery:
+            locator:
+              enabled: false
+
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+            - name: Retry
+              args:
+                retries: 2
+                # GET only. Retrying a POST could place the same order twice.
+                methods: GET
+                series: SERVER_ERROR
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+
+          routes:
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    # Tight: this is where credential stuffing lands, and BCrypt
+                    # makes each attempt expensive for us as well as the attacker.
+                    key-resolver: "#{@authEndpointKeyResolver}"
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                - name: CircuitBreaker
+                  args:
+                    name: authCircuitBreaker
+                    fallbackUri: forward:/fallback/auth
+
+            - id: menu-service
+              uri: ${MENU_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/menu/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userOrAddressKeyResolver}"
+                    redis-rate-limiter.replenishRate: 50
+                    redis-rate-limiter.burstCapacity: 100
+
+            - id: order-service
+              uri: ${ORDER_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/orders/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userOrAddressKeyResolver}"
+                    redis-rate-limiter.replenishRate: 20
+                    redis-rate-limiter.burstCapacity: 40
+
+            - id: payment-service
+              uri: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/payments/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userOrAddressKeyResolver}"
+                    redis-rate-limiter.replenishRate: 10
+                    redis-rate-limiter.burstCapacity: 20
+
+            - id: kitchen-service
+              uri: ${KITCHEN_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/kitchen/**
+
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/notifications/**
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+
+dinehub:
+  jwt:
+    secret: ${JWT_SECRET:}
+    access-token-ttl: ${JWT_ACCESS_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TTL:7d}
+    issuer: dinehub
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 20
+        failureRateThreshold: 50
+        waitDurationInOpenState: 20s
+        permittedNumberOfCallsInHalfOpenState: 5
+  timelimiter:
+    configs:
+      default:
+        # Shorter than the client's patience. A gateway that waits 30 seconds
+        # for a dead service just moves the outage to the browser.
+        timeoutDuration: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        liveness:
+          include: livenessState
+        # The gateway has no database. Readiness is about its own ability to
+        # accept connections — it deliberately does NOT check downstream
+        # services, because a single failing service should not take the whole
+        # entry point out of the load balancer.
+        readiness:
+          include: readinessState
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    com.dinehub: ${LOG_LEVEL:INFO}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+dinehub:
+  jwt:
+    secret: local-development-signing-key-not-for-any-real-use
+logging:
+  level:
+    com.dinehub: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+logging:
+  level:
+    com.dinehub: INFO

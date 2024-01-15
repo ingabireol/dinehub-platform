@@ -1,0 +1,15 @@
+# Keep the build context small — it is uploaded to the daemon on every build.
+**/target/
+**/node_modules/
+**/.git/
+**/.github/
+**/dist/
+**/*.md
+!README.md
+.idea/
+.vscode/
+*.log
+deploy/
+observability/
+docs/
+web/
