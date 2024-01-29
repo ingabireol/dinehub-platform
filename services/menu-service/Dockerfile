@@ -21,6 +21,10 @@ COPY services/common/pom.xml services/common/
 COPY services/api-gateway/pom.xml services/api-gateway/
 COPY services/auth-service/pom.xml services/auth-service/
 COPY services/menu-service/pom.xml services/menu-service/
+COPY services/order-service/pom.xml services/order-service/
+COPY services/payment-service/pom.xml services/payment-service/
+COPY services/kitchen-service/pom.xml services/kitchen-service/
+COPY services/notification-service/pom.xml services/notification-service/
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -q -pl services/common,services/menu-service -am dependency:go-offline -DskipTests || true
 

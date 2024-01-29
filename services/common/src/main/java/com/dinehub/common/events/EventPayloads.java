@@ -51,7 +51,19 @@ public final class EventPayloads {
             UUID customerId,
             String customerEmail,
             BigDecimal totalAmount,
-            int itemCount
+            int itemCount,
+
+            /*
+             * A plain-text summary of the order lines, e.g. "2 × Rwandan Tea,
+             * 1 × Grilled Tilapia".
+             *
+             * Carried on the event so kitchen-service can render a legible
+             * ticket without calling order-service. The kitchen board has to
+             * render during a dinner rush, and a synchronous call per ticket is
+             * exactly the wrong thing to add to that path — it would also mean
+             * the board goes blank whenever order-service restarts.
+             */
+            String itemsSummary
     ) {
     }
 

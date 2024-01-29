@@ -1,9 +1,5 @@
-package com.dinehub.auth;
+package com.dinehub.common.security;
 
-import com.dinehub.auth.config.JwtAuthenticationFilter;
-import com.dinehub.common.security.JwtProperties;
-import com.dinehub.common.security.JwtService;
-import com.dinehub.common.security.Roles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

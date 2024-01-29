@@ -1,0 +1,12 @@
+# Testcontainers supplies the datasource and broker through @ServiceConnection,
+# so nothing here points at a real host.
+spring:
+  jpa:
+    show-sql: false
+  flyway:
+    locations: classpath:db/migration
+logging:
+  level:
+    com.dinehub: DEBUG
+    org.testcontainers: WARN
+    org.springframework.boot.testcontainers: WARN

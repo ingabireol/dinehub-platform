@@ -43,6 +43,7 @@ public final class DomainEvents {
     public static final String Q_PAYMENT_ORDER_PLACED = "payment.order-placed";
     public static final String Q_ORDER_PAYMENT = "order.payment-result";
     public static final String Q_ORDER_KITCHEN = "order.kitchen-status";
+    public static final String Q_KITCHEN_ORDER_PLACED = "kitchen.order-placed";
     public static final String Q_KITCHEN_PAYMENT = "kitchen.payment-completed";
     public static final String Q_KITCHEN_ORDER_CANCELLED = "kitchen.order-cancelled";
     public static final String Q_NOTIFICATION_ORDER_STATUS = "notification.order-status";

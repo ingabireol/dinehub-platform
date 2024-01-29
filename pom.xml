@@ -33,6 +33,10 @@
     <module>services/api-gateway</module>
     <module>services/auth-service</module>
     <module>services/menu-service</module>
+    <module>services/order-service</module>
+    <module>services/payment-service</module>
+    <module>services/kitchen-service</module>
+    <module>services/notification-service</module>
   </modules>
 
   <properties>
@@ -171,6 +175,7 @@
                 <exclude>**/config/SecurityConfig.class</exclude>
                 <exclude>**/config/GatewayConfig.class</exclude>
                 <exclude>**/config/CorsConfig.class</exclude>
+                <exclude>**/config/WebClientConfig.class</exclude>
               </excludes>
             </configuration>
           </execution>

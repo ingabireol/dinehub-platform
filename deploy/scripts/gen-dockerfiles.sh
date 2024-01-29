@@ -7,13 +7,19 @@ cd "$(dirname "$0")/../.."
 # Every module the parent POM declares. Maven needs each one's POM present in
 # the build context even when building a single service, because it reads the
 # whole reactor before deciding what to build.
-ALL_MODULES="common api-gateway auth-service menu-service"
+ALL_MODULES="common api-gateway auth-service menu-service order-service \
+             payment-service kitchen-service notification-service"
 
-for svc in api-gateway auth-service menu-service; do
+for svc in api-gateway auth-service menu-service order-service \
+           payment-service kitchen-service notification-service; do
   case $svc in
-    api-gateway) port=8080 ;;
-    auth-service) port=8081 ;;
-    menu-service) port=8082 ;;
+    api-gateway)          port=8080 ;;
+    auth-service)         port=8081 ;;
+    menu-service)         port=8082 ;;
+    order-service)        port=8083 ;;
+    payment-service)      port=8084 ;;
+    kitchen-service)      port=8085 ;;
+    notification-service) port=8086 ;;
   esac
 
   pom_copies=""

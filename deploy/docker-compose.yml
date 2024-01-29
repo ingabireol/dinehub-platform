@@ -125,6 +125,76 @@ services:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
 
+  order-service:
+    build:
+      context: ..
+      dockerfile: services/order-service/Dockerfile
+    image: dinehub/order-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_orders
+      SERVER_PORT: 8083
+      # The one synchronous call in the platform.
+      MENU_SERVICE_URL: http://menu-service:8082
+    ports:
+      - "127.0.0.1:${ORDER_PORT:-8083}:8083"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      menu-service: { condition: service_started }
+
+  payment-service:
+    build:
+      context: ..
+      dockerfile: services/payment-service/Dockerfile
+    image: dinehub/payment-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_payments
+      SERVER_PORT: 8084
+      # One in ten declines locally, so the cancellation path, the notification
+      # and the alert are exercised rather than being code nobody has seen run.
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.1}
+    ports:
+      - "127.0.0.1:${PAYMENT_PORT:-8084}:8084"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  kitchen-service:
+    build:
+      context: ..
+      dockerfile: services/kitchen-service/Dockerfile
+    image: dinehub/kitchen-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_kitchen
+      SERVER_PORT: 8085
+    ports:
+      - "127.0.0.1:${KITCHEN_PORT:-8085}:8085"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  notification-service:
+    build:
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    image: dinehub/notification-service:local
+    <<: *service-defaults
+    environment:
+      <<: *java-env
+      DB_NAME: dinehub_notifications
+      SERVER_PORT: 8086
+    ports:
+      - "127.0.0.1:${NOTIFICATION_PORT:-8086}:8086"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
   api-gateway:
     build:
       context: ..
@@ -153,6 +223,10 @@ services:
       redis: { condition: service_healthy }
       auth-service: { condition: service_started }
       menu-service: { condition: service_started }
+      order-service: { condition: service_started }
+      payment-service: { condition: service_started }
+      kitchen-service: { condition: service_started }
+      notification-service: { condition: service_started }
 
 volumes:
   postgres-data:

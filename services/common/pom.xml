@@ -46,9 +46,12 @@
       <artifactId>spring-boot-starter-amqp</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- The shared JWT filter needs the servlet security types. Optional, so a
+         service that does not use Spring Security (the reactive gateway) does
+         not get a servlet stack pulled onto its classpath. -->
     <dependency>
-      <groupId>org.springframework.security</groupId>
-      <artifactId>spring-security-core</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
       <optional>true</optional>
     </dependency>
 
@@ -74,6 +77,12 @@
       <groupId>net.logstash.logback</groupId>
       <artifactId>logstash-logback-encoder</artifactId>
       <version>${logstash-encoder.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

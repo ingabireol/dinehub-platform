@@ -1,6 +1,6 @@
-package com.dinehub.auth.config;
+package com.dinehub.common.security;
 
-import com.dinehub.common.security.JwtService;
+
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;

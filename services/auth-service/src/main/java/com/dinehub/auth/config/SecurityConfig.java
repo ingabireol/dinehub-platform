@@ -1,5 +1,6 @@
 package com.dinehub.auth.config;
 
+import com.dinehub.common.security.JwtAuthenticationFilter;
 import com.dinehub.common.security.JwtProperties;
 import com.dinehub.common.security.JwtService;
 import org.springframework.context.annotation.Bean;

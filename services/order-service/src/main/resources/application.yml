@@ -1,0 +1,188 @@
+# ---------------------------------------------------------------------------
+# order-service configuration.
+#
+# Every value that differs between environments comes from an environment
+# variable with a local-friendly default. Nothing environment-specific is
+# hard-coded, so the same image runs in dev, test and prod.
+# ---------------------------------------------------------------------------
+spring:
+  application:
+    name: order-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:dinehub_orders}
+    username: ${DB_USER:dinehub}
+    password: ${DB_PASSWORD:dinehub}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: 2
+      connection-timeout: 10000
+      # Logs a warning when a connection is held longer than this. Finds the
+      # leaked connection before it exhausts the pool at 3am.
+      leak-detection-threshold: 30000
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Letting Hibernate alter tables means the schema
+      # in production is whatever the last deployed entity happened to imply.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:dinehub}
+    password: ${RABBITMQ_PASSWORD:dinehub}
+    connection-timeout: 10000
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        # Bounded retry, then dead-letter. Unbounded retry on a poison message
+        # is worse than dead-lettering it: the consumer spins, the queue backs
+        # up behind it, and nothing reports a problem because the message is
+        # technically still being processed.
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 500ms
+          multiplier: 2
+          max-interval: 5s
+        # This is what actually sends an exhausted message to the DLX.
+        default-requeue-rejected: false
+        acknowledge-mode: auto
+        prefetch: 10
+        concurrency: 2
+        max-concurrency: 8
+
+  # Finish in-flight requests before exiting. Without it, a rolling update
+  # returns 502 to whoever was mid-request on the pod being replaced.
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+
+server:
+  port: ${SERVER_PORT:8083}
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+  forward-headers-strategy: framework
+
+dinehub:
+  jwt:
+    # No default. The service refuses to start without it; see JwtProperties.
+    secret: ${JWT_SECRET:}
+    access-token-ttl: ${JWT_ACCESS_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TTL:7d}
+    issuer: dinehub
+
+  menu-service:
+    # The one synchronous call in the platform. Docker Compose supplies a
+    # container name here, Kubernetes supplies a Service name.
+    url: ${MENU_SERVICE_URL:http://localhost:8082}
+    # Short, and shorter than the client's patience. A pricing call that waits
+    # thirty seconds just moves the outage into the browser.
+    timeout: ${MENU_SERVICE_TIMEOUT:3s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        # Liveness answers "is the JVM alive". It must NOT check the database:
+        # a database blip would otherwise make Kubernetes kill every pod, which
+        # turns a recoverable dependency outage into an outage of everything.
+        liveness:
+          include: livenessState
+        # Readiness answers "can this pod serve traffic", so it does check.
+        readiness:
+          include: readinessState,db,rabbit
+  health:
+    rabbit:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  info:
+    git:
+      mode: full
+    env:
+      enabled: true
+  observations:
+    key-values:
+      service: ${spring.application.name}
+
+springdoc:
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+
+logging:
+  level:
+    com.dinehub: ${LOG_LEVEL:INFO}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    # Demo users for every role, so `make up` gives a usable app.
+    locations: classpath:db/migration,classpath:db/seed
+dinehub:
+  jwt:
+    secret: local-development-signing-key-not-for-any-real-use
+logging:
+  level:
+    com.dinehub: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+logging:
+  level:
+    com.dinehub: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  flyway:
+    # Seed data never runs in production. It contains known credentials.
+    locations: classpath:db/migration
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
