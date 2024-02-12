@@ -228,6 +228,23 @@ services:
       kitchen-service: { condition: service_started }
       notification-service: { condition: service_started }
 
+  # --- Frontend -------------------------------------------------------------
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    image: dinehub/web:local
+    <<: *service-defaults
+    environment:
+      # The image contains no hostname; this is substituted at container start,
+      # which is what lets the same artefact run locally and in every cluster.
+      GATEWAY_URL: http://api-gateway:8080
+    ports:
+      # Port 80, so `make up` really does give you http://localhost.
+      - "127.0.0.1:${WEB_PORT:-80}:8080"
+    depends_on:
+      api-gateway: { condition: service_started }
+
 volumes:
   postgres-data:
   rabbitmq-data:

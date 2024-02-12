@@ -1,0 +1,214 @@
+/* ---------------------------------------------------------------------------
+   DineHub. One stylesheet; the app is small enough that per-component styles
+   would be more indirection than help.
+
+   Everything is a token, and the dark palette is chosen rather than derived by
+   flipping lightness — an automatic inversion produces muddy colours and
+   unreadable contrast on the status chips.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --surface-sunken: #f4f2ee;
+  --ink: #1c1b19;
+  --ink-muted: #5f5c56;
+  --ink-faint: #8a867e;
+  --line: #e4e0d8;
+
+  --brand: #c2531f;
+  --brand-ink: #ffffff;
+  --brand-wash: #fdeee4;
+
+  --ok: #10a17a;
+  --warn: #b07d00;
+  --bad: #b3261e;
+  --info: #4a7fe8;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614;
+    --surface: #211f1c;
+    --surface-sunken: #1b1a17;
+    --ink: #f2efe9;
+    --ink-muted: #a8a49c;
+    --ink-faint: #78746c;
+    --line: #35322c;
+
+    --brand: #e0804a;
+    --brand-ink: #1c1b19;
+    --brand-wash: #2e2019;
+
+    --ok: #3ec79a;
+    --warn: #d9a93a;
+    --bad: #e8615a;
+    --info: #7aa5f0;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 25%);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0 0 .5rem; letter-spacing: -0.01em; line-height: 1.2; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 .75rem; }
+
+a { color: var(--brand); }
+
+/* --- Layout --------------------------------------------------------------- */
+
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .75rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 10;
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-weight: 700; font-size: 1.1rem; color: var(--brand);
+  text-decoration: none; letter-spacing: -0.02em;
+}
+.topbar nav { display: flex; gap: .25rem; flex-wrap: wrap; }
+.topbar .spacer { flex: 1 1 auto; }
+
+.navlink {
+  padding: .4rem .7rem; border-radius: var(--radius-sm);
+  color: var(--ink-muted); text-decoration: none; font-size: .9rem;
+}
+.navlink:hover { background: var(--surface-sunken); color: var(--ink); }
+.navlink.active { background: var(--brand-wash); color: var(--brand); font-weight: 600; }
+
+main { flex: 1 1 auto; padding: 1.5rem 1.25rem 3rem; max-width: 1100px; width: 100%; margin: 0 auto; }
+
+/* --- Cards and grids ------------------------------------------------------ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.between { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
+
+/* --- Controls ------------------------------------------------------------- */
+
+button, .btn {
+  font: inherit; font-weight: 600; font-size: .9rem;
+  padding: .5rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--surface-sunken); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--brand); color: var(--brand-ink); border-color: var(--brand);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--brand); }
+.btn-danger { color: var(--bad); border-color: var(--bad); }
+.btn-sm { padding: .3rem .6rem; font-size: .82rem; }
+
+input, select, textarea {
+  font: inherit;
+  padding: .5rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  width: 100%;
+}
+label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: .25rem; }
+.field { margin-bottom: .9rem; }
+
+/* --- Status chips --------------------------------------------------------- */
+/* Every chip carries its text, never colour alone — colour is reinforcement. */
+
+.chip {
+  display: inline-block;
+  padding: .12rem .5rem;
+  border-radius: 100px;
+  font-size: .75rem; font-weight: 700;
+  letter-spacing: .02em;
+  border: 1px solid transparent;
+}
+.chip-PLACED    { background: var(--surface-sunken); color: var(--ink-muted); border-color: var(--line); }
+.chip-PAID      { background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); }
+.chip-PREPARING { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.chip-QUEUED    { background: var(--surface-sunken); color: var(--ink-muted); border-color: var(--line); }
+.chip-READY     { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.chip-DELIVERED { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.chip-CANCELLED { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+
+/* --- Messages ------------------------------------------------------------- */
+
+.alert {
+  padding: .7rem .9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: .9rem;
+  margin-bottom: 1rem;
+}
+.alert-error   { background: color-mix(in srgb, var(--bad) 8%, transparent);  border-color: var(--bad); color: var(--bad); }
+.alert-success { background: color-mix(in srgb, var(--ok) 8%, transparent);   border-color: var(--ok); color: var(--ok); }
+.alert-info    { background: color-mix(in srgb, var(--info) 8%, transparent); border-color: var(--info); color: var(--info); }
+
+.muted { color: var(--ink-muted); }
+.faint { color: var(--ink-faint); font-size: .85rem; }
+.price { font-variant-numeric: tabular-nums; font-weight: 700; }
+.empty { text-align: center; padding: 3rem 1rem; color: var(--ink-muted); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--line); }
+th { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); }
+
+.badge {
+  background: var(--brand); color: var(--brand-ink);
+  border-radius: 100px; padding: 0 .4rem;
+  font-size: .72rem; font-weight: 700; min-width: 1.1rem;
+  display: inline-block; text-align: center;
+}
+
+@media (max-width: 560px) {
+  main { padding: 1rem .9rem 2.5rem; }
+  .topbar { padding: .6rem .9rem; }
+}
