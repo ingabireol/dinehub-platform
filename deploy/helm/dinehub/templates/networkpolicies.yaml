@@ -1,0 +1,179 @@
+{{- if .Values.networkPolicies.enabled }}
+{{- $full := include "dinehub.fullname" . }}
+{{/*
+  Default-deny, then open exactly what the architecture needs.
+
+  Without these, a compromised notification-service can reach the orders
+  database directly. The policies are what make "a service reaches only its own
+  database" a fact rather than a convention.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-default-deny
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- /* DNS has to be allowed or nothing resolves anything, including the
+           Services this chart creates. */}}
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+{{/* Only the ingress controller may reach the gateway and the web app. */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-ingress
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [api-gateway, web]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        {{- /* kind and k3d place the controller differently, so the label
+               selector alone is not portable. */}}
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: {{ (index .Values.services "api-gateway").port }} }
+        - { protocol: TCP, port: {{ .Values.web.port }} }
+---
+{{/* The gateway may reach the services it routes to, and nothing else. */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-gateway-egress
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dinehub
+      ports:
+        {{- range $name, $svc := .Values.services }}
+        {{- if and $svc.enabled (ne $name "api-gateway") }}
+        - { protocol: TCP, port: {{ $svc.port }} }
+        {{- end }}
+        {{- end }}
+        - { protocol: TCP, port: 6379 }
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+---
+{{/* Each service: reachable from the gateway, may reach only Postgres and RabbitMQ. */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-service-traffic
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- /* From the gateway, and from order-service — which calls menu-service
+           to price a basket, the one synchronous hop in the platform. */}}
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-service
+      ports:
+        {{- range $name, $svc := .Values.services }}
+        {{- if $svc.enabled }}
+        - { protocol: TCP, port: {{ $svc.port }} }
+        {{- end }}
+        {{- end }}
+    {{- /* And from anywhere in the namespace for metrics scraping. */}}
+    - from:
+        - namespaceSelector: {}
+      ports:
+        {{- range $name, $svc := .Values.services }}
+        {{- if $svc.enabled }}
+        - { protocol: TCP, port: {{ $svc.port }} }
+        {{- end }}
+        {{- end }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: database
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: broker
+      ports:
+        - { protocol: TCP, port: 5672 }
+    {{- /* order-service → menu-service. */}}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: menu-service
+      ports:
+        - { protocol: TCP, port: {{ (index .Values.services "menu-service").port }} }
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+---
+{{/* The database accepts connections from the services and from the backup job. */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-database
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: database
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: backup
+      ports:
+        - { protocol: TCP, port: 5432 }
+{{- end }}

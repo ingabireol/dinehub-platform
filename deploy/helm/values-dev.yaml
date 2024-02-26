@@ -1,0 +1,43 @@
+---
+# ===========================================================================
+# dev — automatic on every merge to main.
+#
+# Only the values that genuinely differ from the chart defaults. A values file
+# that repeats the defaults makes it impossible to see what is special about the
+# environment, which is the whole reason for having one.
+# ===========================================================================
+
+global:
+  environment: dev
+  logLevel: DEBUG
+  seedData: true          # a usable menu and the demo accounts
+  swaggerEnabled: true
+
+defaults:
+  replicaCount: 1
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 512Mi }
+
+services:
+  payment-service:
+    extraEnv:
+      - name: PAYMENT_FAILURE_RATE
+        # One in ten declines, so the cancellation path, the notification and
+        # the alert are exercised constantly rather than being code nobody has
+        # ever seen run.
+        value: "0.1"
+
+ingress:
+  host: dev.dinehub.local
+
+postgresql:
+  storage: 2Gi
+
+rabbitmq:
+  storage: 1Gi
+
+backup:
+  # dev is rebuilt from seed data in minutes. A backup of a disposable
+  # environment is an operational cost with no matching risk.
+  enabled: false

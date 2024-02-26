@@ -1,0 +1,122 @@
+{{- if .Values.backup.enabled }}
+{{- $full := include "dinehub.fullname" . }}
+{{/*
+  Nightly pg_dump to a PVC.
+
+  Deliberately modest, and said plainly: a dump to a volume in the same cluster
+  protects against an application mistake, not against losing the cluster.
+  Real production needs snapshots plus WAL archiving to object storage, and a
+  restore that has actually been rehearsed. docs/ENVIRONMENTS.md says so.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $full }}-backups
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-db-backup
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  {{- /* Keep enough history to see a pattern of failures, not just the last one. */}}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "dinehub.labels" . | nindent 12 }}
+            app.kubernetes.io/name: db-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: {{ .Values.postgresql.image }}
+              env:
+                - name: PGHOST
+                  value: {{ $full }}-postgresql
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.secrets.database }}
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.secrets.database }}
+                      key: password
+                - name: RETENTION_DAYS
+                  value: {{ .Values.backup.retentionDays | quote }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  FAILED=0
+
+                  for DB in {{ range $name, $svc := $.Values.services }}{{ if and $svc.enabled $svc.database }}{{ $svc.database }} {{ end }}{{ end }}; do
+                    OUT="/backups/${DB}-${STAMP}.sql.gz"
+                    echo "Dumping ${DB}"
+                    # Write to a .partial name and rename on success, so an
+                    # interrupted dump can never be mistaken for a good one.
+                    if pg_dump --dbname="${DB}" --no-owner --no-privileges \
+                         | gzip -6 > "${OUT}.partial"; then
+                      mv "${OUT}.partial" "${OUT}"
+                      echo "  $(du -h "${OUT}" | cut -f1)"
+                    else
+                      echo "  FAILED"
+                      rm -f "${OUT}.partial"
+                      FAILED=1
+                    fi
+                  done
+
+                  # Prune only after a fully successful run. Pruning after a
+                  # partial failure could delete the last good backup.
+                  if [ "$FAILED" -eq 0 ]; then
+                    find /backups -name '*.sql.gz' -mtime "+${RETENTION_DAYS}" -delete
+                    echo "Pruned backups older than ${RETENTION_DAYS} days"
+                  else
+                    echo "A dump failed — retention pruning skipped deliberately"
+                  fi
+
+                  echo "Backups on disk:"
+                  ls -1 /backups | tail -20
+
+                  exit "$FAILED"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 256Mi }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ $full }}-backups
+            - name: tmp
+              emptyDir: {}
+{{- end }}

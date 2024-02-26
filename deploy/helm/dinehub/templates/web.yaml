@@ -1,0 +1,73 @@
+{{- if .Values.web.enabled }}
+{{- $full := include "dinehub.fullname" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-web
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+    {{- include "dinehub.selectorLabels" (dict "name" "web" "release" .Release.Name) | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.web.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "dinehub.selectorLabels" (dict "name" "web" "release" .Release.Name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dinehub.labels" . | nindent 8 }}
+        {{- include "dinehub.selectorLabels" (dict "name" "web" "release" .Release.Name) | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      securityContext:
+        {{- toYaml .Values.web.securityContext.pod | nindent 8 }}
+      containers:
+        - name: web
+          image: {{ include "dinehub.image" (dict "root" . "name" "web") }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.port }}
+          env:
+            {{- /* The image carries no hostname; this is substituted at start. */}}
+            - name: GATEWAY_URL
+              value: {{ printf "http://%s-api-gateway:%v" $full (index .Values.services "api-gateway").port | quote }}
+          securityContext:
+            {{- toYaml .Values.web.securityContext.container | nindent 12 }}
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          volumeMounts:
+            {{- /* Read-only root filesystem, so nginx needs writable scratch
+                   space for its temp paths and its pid file. */}}
+            - { name: tmp, mountPath: /tmp }
+            - { name: nginx-cache, mountPath: /var/cache/nginx }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        - name: nginx-cache
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-web
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+    {{- include "dinehub.selectorLabels" (dict "name" "web" "release" .Release.Name) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.web.port }}
+      targetPort: http
+      name: http
+  selector:
+    {{- include "dinehub.selectorLabels" (dict "name" "web" "release" .Release.Name) | nindent 4 }}
+{{- end }}

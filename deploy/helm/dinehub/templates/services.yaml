@@ -1,0 +1,203 @@
+{{/*
+  One Deployment, Service and (where enabled) PDB, HPA and ServiceMonitor per
+  enabled service.
+
+  A loop rather than seven near-identical files: a change to the probe
+  configuration or the security context is then one edit that cannot be applied
+  to six services and forgotten on the seventh.
+*/}}
+{{- $root := . -}}
+{{- $full := include "dinehub.fullname" . -}}
+
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+{{- $v := fromYaml (include "dinehub.serviceValues" (dict "root" $root "svc" $svc)) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- include "dinehub.labels" $root | nindent 4 }}
+    {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 4 }}
+    app.kubernetes.io/component: service
+spec:
+  {{- if not $v.autoscaling.enabled }}
+  {{/* Omitted entirely when an HPA owns it, or the two fight on every sync. */}}
+  replicas: {{ $v.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: {{ $v.strategy.type }}
+    {{- if eq $v.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ $v.strategy.maxSurge }}
+      maxUnavailable: {{ $v.strategy.maxUnavailable }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dinehub.labels" $root | nindent 8 }}
+        {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 8 }}
+        app.kubernetes.io/component: service
+      annotations:
+        {{/* Scrape annotations for a plain Prometheus; the ServiceMonitor below
+             covers the Operator case. Having both means neither setup needs
+             special handling. */}}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $svc.port | quote }}
+        prometheus.io/path: /actuator/prometheus
+    spec:
+      {{- with $root.Values.global.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $v.securityContext.pod | nindent 8 }}
+      {{- if $v.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          {{/* ScheduleAnyway, not DoNotSchedule: on a single-node cluster the
+               strict form leaves the second replica permanently Pending. */}}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 14 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $v.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "dinehub.image" (dict "root" $root "name" $name) }}
+          imagePullPolicy: {{ $root.Values.global.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+              protocol: TCP
+          env:
+            {{- include "dinehub.commonEnv" (dict "root" $root "svc" $svc) | nindent 12 }}
+            {{- if eq $name "api-gateway" }}
+            {{- include "dinehub.gatewayRouteEnv" (dict "root" $root) | nindent 12 }}
+            {{- end }}
+            {{- if $root.Values.global.seedData }}
+            - name: SEED_DATA
+              value: "true"
+            {{- end }}
+          securityContext:
+            {{- toYaml $v.securityContext.container | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: {{ $v.probes.startup.path }}
+              port: http
+            failureThreshold: {{ $v.probes.startup.failureThreshold }}
+            periodSeconds: {{ $v.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ $v.probes.liveness.path }}
+              port: http
+            periodSeconds: {{ $v.probes.liveness.periodSeconds }}
+            failureThreshold: {{ $v.probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ $v.probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ $v.probes.readiness.path }}
+              port: http
+            periodSeconds: {{ $v.probes.readiness.periodSeconds }}
+            failureThreshold: {{ $v.probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ $v.probes.readiness.timeoutSeconds }}
+          volumeMounts:
+            {{/* The root filesystem is read-only, so the JVM needs somewhere to
+                 write its temp files and any heap dump. */}}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- include "dinehub.labels" $root | nindent 4 }}
+    {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 4 }}
+{{- if $v.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- include "dinehub.labels" $root | nindent 4 }}
+spec:
+  {{/* Stops a node drain taking the last replica of a service. */}}
+  minAvailable: {{ $v.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 6 }}
+{{- end }}
+{{- if $v.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- include "dinehub.labels" $root | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $full }}-{{ $name }}
+  minReplicas: {{ $v.autoscaling.minReplicas }}
+  maxReplicas: {{ $v.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $v.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      {{/* React quickly to a lunch rush. */}}
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      {{/* Shrink slowly. Scaling down into the next peak is how an autoscaler
+           makes things worse than no autoscaler. */}}
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- if $root.Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- include "dinehub.labels" $root | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "dinehub.selectorLabels" (dict "name" $name "release" $root.Release.Name) | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: {{ $root.Values.serviceMonitor.interval }}
+{{- end }}
+{{- end }}
+{{- end }}

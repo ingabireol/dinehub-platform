@@ -1,0 +1,35 @@
+DineHub {{ .Chart.AppVersion }} deployed to {{ .Release.Namespace }}.
+
+  Environment : {{ .Values.global.environment }}
+  Image tag   : {{ .Values.global.image.tag }}
+  Replicas    : {{ .Values.defaults.replicaCount }} per service
+  Seed data   : {{ ternary "yes" "no" .Values.global.seedData }}
+  Swagger     : {{ ternary "on" "off" .Values.global.swaggerEnabled }}
+
+Check it came up:
+
+  kubectl get pods --namespace {{ .Release.Namespace }}
+  kubectl rollout status deployment --namespace {{ .Release.Namespace }}
+
+Then verify it actually works, which is a different question:
+
+  ./deploy/scripts/smoke-test.sh --env {{ .Values.global.environment }}
+
+{{- if .Values.ingress.enabled }}
+
+Reachable at http://{{ .Values.ingress.host }}
+(add it to /etc/hosts pointing at your ingress for a local cluster).
+{{- end }}
+
+{{- if .Values.global.seedData }}
+
+Demo accounts, password DineHub2024!
+  customer@dinehub.local · chef@dinehub.local · admin@dinehub.local
+{{- end }}
+
+{{- if not .Values.backup.enabled }}
+
+Note: the database backup CronJob is not enabled in this environment.
+{{- end }}
+
+Rollback:  ./deploy/scripts/rollback.sh --env {{ .Values.global.environment }}

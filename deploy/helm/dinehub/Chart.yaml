@@ -1,0 +1,17 @@
+---
+apiVersion: v2
+name: dinehub
+description: |
+  The DineHub platform — seven Spring Boot services, an Angular frontend, and
+  the PostgreSQL and RabbitMQ they depend on.
+
+  One chart with a template set per service rather than seven subcharts: the
+  services are deployed together, versioned together and rolled back together,
+  so splitting them would add indirection without adding independence.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords: [dinehub, microservices, demo]
+home: https://github.com/olivier-ingabire/dinehub-platform
+maintainers:
+  - name: Olivier Ingabire

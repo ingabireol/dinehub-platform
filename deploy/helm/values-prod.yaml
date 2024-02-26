@@ -1,0 +1,99 @@
+---
+# ===========================================================================
+# prod — manual approval required (GitHub Environment protection rule).
+#
+# Every value here is a deliberate difference from dev and test. The CI job
+# `validate-charts` asserts the important ones are present, so this file cannot
+# quietly lose its replica count or its backup job.
+# ===========================================================================
+
+global:
+  environment: prod
+  logLevel: INFO
+  # Not merely false — the prod Spring profile excludes the seed migration
+  # location entirely, so the seed SQL cannot run even if this were wrong.
+  seedData: false
+  # An API explorer is a map. Off.
+  swaggerEnabled: false
+
+defaults:
+  replicaCount: 2
+
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { memory: 1Gi }
+
+  podDisruptionBudget:
+    enabled: true
+    # With 2 replicas this means a node drain can take one and must wait for its
+    # replacement before taking the other.
+    minAvailable: 1
+
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    # A new pod becomes Ready before an old one is removed. A service that never
+    # becomes Ready then hangs the rollout rather than taking the old pods away,
+    # which is the correct failure mode.
+    maxUnavailable: 0
+
+  terminationGracePeriodSeconds: 60
+
+web:
+  replicaCount: 2
+
+services:
+  order-service:
+    # The only service with genuinely variable load — lunch and dinner are real
+    # peaks — and the only one where scaling helps. An HPA on a service that is
+    # never the bottleneck adds a moving part for no benefit.
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    extraEnv:
+      - name: MENU_SERVICE_URL
+        value: http://dinehub-menu-service:8082
+
+  payment-service:
+    extraEnv:
+      - name: PAYMENT_FAILURE_RATE
+        # No simulated failures in production.
+        value: "0.0"
+
+ingress:
+  host: dinehub.local
+  tls:
+    enabled: true
+    secretName: dinehub-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+
+postgresql:
+  storage: 20Gi
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+
+rabbitmq:
+  storage: 4Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retentionDays: 7
+  storage: 20Gi
+
+networkPolicies:
+  enabled: true
+
+serviceMonitor:
+  enabled: true
+  interval: 30s

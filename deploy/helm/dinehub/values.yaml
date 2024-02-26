@@ -1,0 +1,227 @@
+---
+# ===========================================================================
+# Chart defaults.
+#
+# These are the values an environment inherits unless its own file overrides
+# them. The defaults are deliberately the *safe* ones — one replica, no seed
+# data, Swagger off — so that a new environment with a minimal values file is
+# conservative rather than permissive.
+#
+# Environment files: values-dev.yaml, values-test.yaml, values-prod.yaml.
+# ===========================================================================
+
+global:
+  image:
+    registry: ghcr.io
+    repository: olivier-ingabire/dinehub
+    # Set by the pipeline to <semver>-<short-sha>. Never 'latest': a mutable tag
+    # makes "what is running?" unanswerable and a rollback ambiguous.
+    tag: ""
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  environment: dev
+  logLevel: INFO
+
+  # Secrets are created at deploy time from GitHub Secrets and referenced by
+  # name. Nothing secret is ever templated into a chart.
+  secrets:
+    jwt: dinehub-jwt
+    database: dinehub-db
+    rabbitmq: dinehub-rabbitmq
+
+  # Seed data and the API explorer. Off by default; dev and test turn them on.
+  seedData: false
+  swaggerEnabled: false
+
+# --- Defaults every service inherits ---------------------------------------
+defaults:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      # No CPU limit by default. A CPU limit throttles rather than kills, and a
+      # JVM throttled during garbage collection produces latency that looks like
+      # an application fault. The request is what guarantees the share.
+      memory: 512Mi
+
+  # Both probes point at the Actuator health groups, which is the whole reason
+  # those groups exist.
+  probes:
+    startup:
+      path: /actuator/health/readiness
+      # Generous: a JVM with Flyway migrations to run can legitimately take a
+      # while, and a tight startup probe turns a slow boot into a crash loop.
+      failureThreshold: 30
+      periodSeconds: 5
+    liveness:
+      # Deliberately NOT the readiness group. Liveness must not check the
+      # database: a database blip would otherwise make Kubernetes kill every
+      # pod, turning a recoverable dependency outage into a total one.
+      path: /actuator/health/liveness
+      periodSeconds: 15
+      failureThreshold: 3
+      timeoutSeconds: 3
+    readiness:
+      path: /actuator/health/readiness
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 3
+
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      runAsUser: 10001
+      runAsGroup: 10001
+      fsGroup: 10001
+      seccompProfile:
+        type: RuntimeDefault
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  autoscaling:
+    enabled: false
+
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 1
+
+  # Spread replicas across nodes where there is more than one, so a node loss
+  # does not take a whole service.
+  topologySpreadConstraints: true
+
+  terminationGracePeriodSeconds: 40
+
+# --- Services ---------------------------------------------------------------
+services:
+  api-gateway:
+    enabled: true
+    port: 8080
+    public: true          # the only workload the ingress may reach
+    needsDatabase: false
+    needsRabbit: false
+    needsRedis: true
+
+  auth-service:
+    enabled: true
+    port: 8081
+    database: dinehub_auth
+
+  menu-service:
+    enabled: true
+    port: 8082
+    database: dinehub_menu
+
+  order-service:
+    enabled: true
+    port: 8083
+    database: dinehub_orders
+    extraEnv:
+      - name: MENU_SERVICE_URL
+        value: http://dinehub-menu-service:8082
+
+  payment-service:
+    enabled: true
+    port: 8084
+    database: dinehub_payments
+    extraEnv:
+      - name: PAYMENT_FAILURE_RATE
+        value: "0.0"
+
+  kitchen-service:
+    enabled: true
+    port: 8085
+    database: dinehub_kitchen
+
+  notification-service:
+    enabled: true
+    port: 8086
+    database: dinehub_notifications
+
+web:
+  enabled: true
+  port: 8080
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      # The unprivileged nginx image runs as 101, not 10001.
+      runAsUser: 101
+      runAsGroup: 101
+      seccompProfile:
+        type: RuntimeDefault
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+
+# --- Ingress ----------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  host: dinehub.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+  tls:
+    enabled: false
+    secretName: dinehub-tls
+
+# --- In-cluster dependencies ------------------------------------------------
+# Real production uses managed instances; docs/ENVIRONMENTS.md records that.
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 4Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+rabbitmq:
+  enabled: true
+  image: rabbitmq:3.13-management-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+# --- Operational ------------------------------------------------------------
+networkPolicies:
+  enabled: true
+
+backup:
+  enabled: false
+  schedule: "0 2 * * *"
+  retentionDays: 7
+  storage: 8Gi
+
+serviceMonitor:
+  # Only meaningful where the Prometheus Operator is installed. Off by default
+  # so a chart install does not fail on a missing CRD.
+  enabled: false
+  interval: 30s

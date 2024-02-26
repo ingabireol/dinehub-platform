@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+{{- $full := include "dinehub.fullname" . }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- /*
+            /api goes to the gateway, everything else to the web app.
+            Order matters: the more specific prefix must come first, or every
+            request including /api lands on the SPA.
+          */}}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $full }}-api-gateway
+                port: { number: {{ (index .Values.services "api-gateway").port }} }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $full }}-web
+                port: { number: {{ .Values.web.port }} }
+{{- end }}
