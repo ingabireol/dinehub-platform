@@ -1,0 +1,302 @@
+---
+# ===========================================================================
+# Nightly security scan.
+#
+# Separate from CI for one reason: a dependency that was clean when it merged
+# may not be clean next week. CI tells you whether a change introduces a
+# problem; this tells you whether the deployed estate has acquired one.
+#
+# It scans the images that are actually deployed, not the ones in a pull request.
+# ===========================================================================
+name: Security (nightly)
+
+on:
+  schedule:
+    # 03:00 UTC — after the overnight Dependabot runs, before anyone is working.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # -------------------------------------------------------------------------
+  # The deployed images
+  # -------------------------------------------------------------------------
+  scan-images:
+    name: Scan ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - auth-service
+          - menu-service
+          - order-service
+          - payment-service
+          - kitchen-service
+          - notification-service
+          - web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find the latest released tag
+        id: tag
+        run: |
+          TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || echo '')
+          if [ -z "$TAG" ]; then
+            echo "No release yet — scanning the main-branch build instead."
+            echo "image=ghcr.io/${{ github.repository_owner }}/dinehub/${{ matrix.service }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=ghcr.io/${{ github.repository_owner }}/dinehub/${{ matrix.service }}:${TAG#v}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy — full report
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          image-ref: ${{ steps.tag.outputs.image }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          # Unfixable findings are reported here, unlike in CI. The nightly run
+          # is where you want the complete picture; the PR gate is where you
+          # want only what the author can act on.
+          ignore-unfixed: false
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: nightly-${{ matrix.service }}
+
+      - name: Fail on a fixable CRITICAL
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.tag.outputs.image }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  # -------------------------------------------------------------------------
+  # Dependencies
+  # -------------------------------------------------------------------------
+  dependency-check:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: OWASP dependency check
+        continue-on-error: true
+        run: |
+          mvn -B -ntp org.owasp:dependency-check-maven:10.0.4:aggregate \
+            -DfailBuildOnCVSS=9 \
+            -DassemblyAnalyzerEnabled=false \
+            -Dformats=HTML,SARIF
+        env:
+          # Without a key the NVD API is heavily rate-limited and the scan takes
+          # an hour. It is optional, so the job degrades rather than failing.
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.*
+          retention-days: 30
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm audit
+        working-directory: web
+        # `--audit-level=high` so a transitive low-severity advisory in a build
+        # tool does not fail a nightly that somebody has to triage.
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --audit-level=high
+
+  # -------------------------------------------------------------------------
+  # Code and configuration
+  # -------------------------------------------------------------------------
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Build for analysis
+        if: matrix.language == 'java-kotlin'
+        run: mvn -B -ntp compile -DskipTests
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: nightly-/language:${{ matrix.language }}
+
+  iac-scan:
+    name: Charts and Dockerfiles
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.1
+
+      - name: Scan the rendered production manifests
+        # The rendered output, not the templates. A chart can look fine and
+        # render a manifest with a privileged container in it.
+        run: |
+          mkdir -p rendered
+          for env in dev test prod; do
+            helm template dinehub deploy/helm/dinehub \
+              --values "deploy/helm/values-${env}.yaml" \
+              --namespace "dinehub-${env}" \
+              --set global.image.tag=scan \
+              > "rendered/${env}.yaml"
+          done
+
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: rendered/
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+      - name: Scan the Dockerfiles
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+  secrets-history:
+    name: Full history secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5  # v2.3.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # -------------------------------------------------------------------------
+  # One summary, and an issue if something needs attention
+  # -------------------------------------------------------------------------
+  report:
+    name: Report
+    needs: [scan-images, dependency-check, codeql, iac-scan, secrets-history]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Summarise
+        run: |
+          {
+            printf '## Nightly security scan\n\n'
+            printf '| Scan | Result |\n|---|---|\n'
+            printf '| Images (Trivy) | %s |\n' '${{ needs.scan-images.result }}'
+            printf '| Dependencies | %s |\n' '${{ needs.dependency-check.result }}'
+            printf '| CodeQL | %s |\n' '${{ needs.codeql.result }}'
+            printf '| Charts and Dockerfiles | %s |\n' '${{ needs.iac-scan.result }}'
+            printf '| Secrets in history | %s |\n\n' '${{ needs.secrets-history.result }}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Raise an issue if anything failed
+        if: contains(needs.*.result, 'failure')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Nightly security scan failed — ${new Date().toISOString().slice(0, 10)}`;
+
+            // One open issue at a time. A new issue every night for the same
+            // unfixed CVE is how a security alert becomes background noise.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,automated',
+            });
+            if (existing.data.length > 0) {
+              core.info(`Issue #${existing.data[0].number} is already open.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['security', 'automated'],
+              body: [
+                'The nightly security scan reported a failure.',
+                '',
+                `[Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                '',
+                '| Scan | Result |',
+                '|---|---|',
+                `| Images | ${{ needs.scan-images.result }} |`,
+                `| Dependencies | ${{ needs.dependency-check.result }} |`,
+                `| CodeQL | ${{ needs.codeql.result }} |`,
+                `| Charts and Dockerfiles | ${{ needs.iac-scan.result }} |`,
+                `| Secrets | ${{ needs.secrets-history.result }} |`,
+                '',
+                'Findings are in the Security tab. This issue stays open until the',
+                'scan passes again, rather than a new one being raised each night.',
+              ].join('\n'),
+            });

@@ -1,0 +1,242 @@
+---
+# ===========================================================================
+# Reusable deployment workflow.
+#
+# Called once per environment by cd.yml. One workflow with inputs rather than
+# three near-identical jobs: a change to the rollback behaviour or the secret
+# creation is then one edit that cannot be applied to dev and forgotten on prod.
+#
+# Mode A / Mode B (see docs/PIPELINE.md) is chosen here, by whether a kubeconfig
+# secret was supplied. The caller does not have to know which it is getting.
+# ===========================================================================
+name: Deploy to an environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: dev, test or prod
+        required: true
+        type: string
+      version:
+        description: The image tag to deploy
+        required: true
+        type: string
+      namespace:
+        required: true
+        type: string
+      values-file:
+        required: true
+        type: string
+      run-e2e:
+        description: Also run the API end-to-end suite after the smoke tests
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      KUBECONFIG:
+        required: false
+      JWT_SECRET:
+        required: false
+      DB_PASSWORD:
+        required: false
+    outputs:
+      mode:
+        description: Which mode the deployment ran in
+        value: ${{ jobs.deploy.outputs.mode }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    # The GitHub Environment is what carries the protection rules. For prod that
+    # is the required-reviewer gate; this job simply waits.
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://${{ inputs.environment == 'prod' && 'dinehub.local' || format('{0}.dinehub.local', inputs.environment) }}
+    timeout-minutes: 30
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.1
+
+      # --- Which mode? -----------------------------------------------------
+      - name: Choose the deployment mode
+        id: mode
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -n "$KUBECONFIG_CONTENT" ]; then
+            echo "mode=persistent" >> "$GITHUB_OUTPUT"
+            echo "Mode B — deploying to the real ${{ inputs.namespace }} namespace."
+          else
+            echo "mode=ephemeral" >> "$GITHUB_OUTPUT"
+            echo "Mode A — no KUBECONFIG secret, so an ephemeral cluster is created."
+            echo "This exercises the chart, the values, the promotion order and the"
+            echo "rollback for real; what it cannot exercise is upgrading over"
+            echo "existing state. See docs/PIPELINE.md."
+          fi
+
+      # --- Mode B: a real cluster -------------------------------------------
+      - name: Configure kubectl for the real cluster
+        if: steps.mode.outputs.mode == 'persistent'
+        run: |
+          mkdir -p "$HOME/.kube"
+          printf '%s' "${{ secrets.KUBECONFIG }}" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl cluster-info
+
+      # --- Mode A: an ephemeral cluster -------------------------------------
+      - name: Create an ephemeral cluster
+        if: steps.mode.outputs.mode == 'ephemeral'
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: dinehub-${{ inputs.environment }}
+          wait: 120s
+
+      - name: Load the images into the ephemeral cluster
+        if: steps.mode.outputs.mode == 'ephemeral'
+        # Pulled from GHCR, then side-loaded. The *same digests* the pipeline
+        # built are what run here, which is the point of build-once-deploy-many
+        # and is what makes this a real test of the release rather than a
+        # separate build.
+        run: |
+          for svc in api-gateway auth-service menu-service order-service \
+                     payment-service kitchen-service notification-service web; do
+            IMAGE="ghcr.io/${{ github.repository_owner }}/dinehub/${svc}:${{ inputs.version }}"
+            echo "::group::${svc}"
+            docker pull "$IMAGE"
+            kind load docker-image "$IMAGE" --name "dinehub-${{ inputs.environment }}"
+            echo "::endgroup::"
+          done
+
+      # --- Secrets ----------------------------------------------------------
+      - name: Create the namespace and its secrets
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          kubectl create namespace "${{ inputs.namespace }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace "${{ inputs.namespace }}" \
+            "dinehub.io/environment=${{ inputs.environment }}" --overwrite
+
+          # In Mode A there is no real secret to inject, so a run-scoped value is
+          # generated. It never leaves the ephemeral cluster, which is destroyed
+          # with the runner.
+          JWT="${JWT_SECRET:-$(head -c 48 /dev/urandom | base64 | tr -d '\n')}"
+          DBP="${DB_PASSWORD:-$(head -c 24 /dev/urandom | base64 | tr -d '\n')}"
+
+          kubectl create secret generic dinehub-jwt \
+            --namespace "${{ inputs.namespace }}" \
+            --from-literal=secret="$JWT" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic dinehub-db \
+            --namespace "${{ inputs.namespace }}" \
+            --from-literal=username=dinehub \
+            --from-literal=password="$DBP" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic dinehub-rabbitmq \
+            --namespace "${{ inputs.namespace }}" \
+            --from-literal=username=dinehub \
+            --from-literal=password="$DBP" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # --- Deploy -----------------------------------------------------------
+      - name: Record the revision before deploying
+        id: before
+        run: |
+          REVISION=$(helm history dinehub --namespace "${{ inputs.namespace }}" \
+                       -o json 2>/dev/null | grep -o '"revision":[0-9]*' | tail -1 | cut -d: -f2 || echo 0)
+          echo "revision=${REVISION:-0}" >> "$GITHUB_OUTPUT"
+          echo "Current revision: ${REVISION:-none}"
+
+      - name: Deploy
+        id: deploy
+        run: |
+          # --atomic: if the release does not become healthy within the timeout,
+          # Helm rolls it back itself rather than leaving a half-updated
+          # namespace for somebody to untangle by hand.
+          helm upgrade --install dinehub deploy/helm/dinehub \
+            --namespace "${{ inputs.namespace }}" \
+            --values "${{ inputs.values-file }}" \
+            --set global.image.tag="${{ inputs.version }}" \
+            ${{ steps.mode.outputs.mode == 'ephemeral' && '--set global.image.pullPolicy=Never' || '' }} \
+            --atomic --wait --timeout 15m
+
+      - name: What is running
+        if: always()
+        run: |
+          kubectl get pods --namespace "${{ inputs.namespace }}" -o wide || true
+          echo "### Deployed to \`${{ inputs.namespace }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl get deploy --namespace "${{ inputs.namespace }}" \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.spec.template.spec.containers[0].image}{"\n"}{end}' \
+            >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Verify -----------------------------------------------------------
+      - name: Smoke test
+        id: smoke
+        run: |
+          kubectl port-forward --namespace "${{ inputs.namespace }}" \
+            svc/dinehub-api-gateway 8080:8080 &
+          PF_PID=$!
+          # Wait for the forward rather than sleeping a fixed amount.
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8080/actuator/health/readiness >/dev/null 2>&1 && break
+            sleep 2
+          done
+          ./deploy/scripts/smoke-test.sh --url http://localhost:8080 --verbose
+          kill "$PF_PID" 2>/dev/null || true
+
+      - name: API end-to-end suite
+        if: inputs.run-e2e && steps.smoke.outcome == 'success'
+        run: |
+          kubectl port-forward --namespace "${{ inputs.namespace }}" \
+            svc/dinehub-api-gateway 8080:8080 &
+          sleep 5
+          ./deploy/scripts/e2e-test.sh --url http://localhost:8080
+
+      # --- Roll back on failure ---------------------------------------------
+      - name: Roll back
+        if: failure() && steps.deploy.outcome == 'success'
+        # Only when the deploy itself succeeded and verification then failed.
+        # If the deploy failed, --atomic has already rolled back and running it
+        # again would go back one release too far.
+        run: |
+          echo "::error::Verification failed after a successful deploy — rolling back."
+          ./deploy/scripts/rollback.sh --env "${{ inputs.environment }}" --force || \
+            helm rollback dinehub --namespace "${{ inputs.namespace }}" --wait --timeout 10m
+
+          {
+            printf '### Rolled back — `%s`\n\n' '${{ inputs.namespace }}'
+            printf 'Deployment of `%s` succeeded but verification failed.\n' '${{ inputs.version }}'
+            printf 'The environment is serving the previous release.\n\n'
+            printf '> Database migrations were **not** reverted. See docs/ROLLBACK_RUNBOOK.md.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "::group::events"
+          kubectl get events --namespace "${{ inputs.namespace }}" --sort-by=.lastTimestamp | tail -40
+          echo "::endgroup::"
+          for pod in $(kubectl get pods --namespace "${{ inputs.namespace }}" -o name); do
+            echo "::group::${pod}"
+            kubectl describe "$pod" --namespace "${{ inputs.namespace }}" | tail -25
+            kubectl logs "$pod" --namespace "${{ inputs.namespace }}" \
+              --tail=60 --all-containers 2>/dev/null || true
+            echo "::endgroup::"
+          done

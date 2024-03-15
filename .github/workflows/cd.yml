@@ -1,0 +1,318 @@
+---
+# ===========================================================================
+# Delivery pipeline.
+#
+# Build once, deploy the same digest everywhere. The images are built exactly
+# once at the top of this workflow; dev, test and prod all receive that build.
+# See docs/adr/0002-build-once-deploy-many.md.
+#
+#   version → build + push + SBOM → dev → smoke → test → smoke + e2e
+#           → [manual approval] → prod → smoke → release
+# ===========================================================================
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip-prod:
+        description: Deploy to dev and test only
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # One delivery run at a time, and never cancelled mid-flight: cancelling a run
+  # between deploying prod and verifying it would leave an unverified release
+  # serving traffic.
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/dinehub
+
+jobs:
+
+  # -------------------------------------------------------------------------
+  # Work out what this release is called
+  # -------------------------------------------------------------------------
+  version:
+    name: Compute the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      semver: ${{ steps.v.outputs.semver }}
+      changelog: ${{ steps.v.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags and history, for the version and the changelog
+
+      - name: Version and changelog
+        id: v
+        run: |
+          # <latest tag>-<short sha>. The sha is what makes it unambiguous:
+          # two builds of the same tag are different artefacts and should not
+          # share a name.
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)
+          SEMVER="${LAST_TAG#v}"
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          VERSION="${SEMVER}-${SHORT_SHA}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+
+          # Commits since the last tag, for the release notes and for the
+          # approval summary a reviewer reads before approving prod.
+          {
+            echo 'changelog<<CHANGELOG_EOF'
+            git log "${LAST_TAG}..HEAD" --pretty=format:'- %s (%an)' --no-merges | head -50
+            echo ''
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            printf '## Release `%s`\n\n' "$VERSION"
+            printf 'Built from `%s` on `%s`.\n\n' "$SHORT_SHA" "${{ github.ref_name }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------
+  # Build every image once
+  # -------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.service }}
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write        # build provenance attestation
+      attestations: write
+    strategy:
+      fail-fast: true        # a partial release is worse than no release
+      matrix:
+        include:
+          - { service: api-gateway,          dockerfile: services/api-gateway/Dockerfile }
+          - { service: auth-service,         dockerfile: services/auth-service/Dockerfile }
+          - { service: menu-service,         dockerfile: services/menu-service/Dockerfile }
+          - { service: order-service,        dockerfile: services/order-service/Dockerfile }
+          - { service: payment-service,      dockerfile: services/payment-service/Dockerfile }
+          - { service: kitchen-service,      dockerfile: services/kitchen-service/Dockerfile }
+          - { service: notification-service, dockerfile: services/notification-service/Dockerfile }
+          - { service: web,                  dockerfile: web/Dockerfile }
+    outputs:
+      digests: ${{ steps.collect.outputs.digests }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ needs.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: true
+          sbom: true
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate an SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.service }}.spdx.json
+          artifact-name: sbom-${{ matrix.service }}
+
+      - name: Record the digest
+        id: collect
+        run: |
+          echo "digests=${{ matrix.service }}@${{ steps.push.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          {
+            printf '| `%s` | `%s` |\n' \
+              '${{ matrix.service }}' '${{ steps.push.outputs.digest }}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.service }}
+          path: /dev/null
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------------
+  # dev
+  # -------------------------------------------------------------------------
+  deploy-dev:
+    name: dev
+    needs: [version, build]
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: dev
+      version: ${{ needs.version.outputs.version }}
+      namespace: dinehub-dev
+      values-file: deploy/helm/values-dev.yaml
+    secrets:
+      KUBECONFIG: ${{ secrets.KUBECONFIG_DEV }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET_DEV }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD_DEV }}
+
+  # -------------------------------------------------------------------------
+  # test — only once dev is verified
+  # -------------------------------------------------------------------------
+  deploy-test:
+    name: test
+    needs: [version, deploy-dev]
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: test
+      version: ${{ needs.version.outputs.version }}
+      namespace: dinehub-test
+      values-file: deploy/helm/values-test.yaml
+      # The full API end-to-end suite runs here rather than in dev: it is the
+      # slowest check and dev's job is to fail fast.
+      run-e2e: true
+    secrets:
+      KUBECONFIG: ${{ secrets.KUBECONFIG_TEST }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET_TEST }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD_TEST }}
+
+  # -------------------------------------------------------------------------
+  # What the approver reads before approving
+  # -------------------------------------------------------------------------
+  approval-summary:
+    name: Summary for approval
+    needs: [version, deploy-dev, deploy-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write it
+        run: |
+          {
+            printf '## Ready for production\n\n'
+            printf '**Version** `%s`\n\n' '${{ needs.version.outputs.version }}'
+            printf 'Deployed and verified in dev (%s) and test (%s).\n\n' \
+              '${{ needs.deploy-dev.outputs.mode }}' '${{ needs.deploy-test.outputs.mode }}'
+            printf '### Changes since the last release\n\n'
+            printf '%s\n\n' '${{ needs.version.outputs.changelog }}'
+            printf '### Before approving\n\n'
+            printf -- '- Is the test environment genuinely green, or merely deployed?\n'
+            printf -- '- Does the commit list contain anything unexpected?\n'
+            printf -- '- Are there database migrations? See docs/RELEASE_RUNBOOK.md.\n'
+            printf -- '- Is there time to watch the rollout for ten minutes?\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------
+  # prod — gated on a required reviewer in the GitHub Environment
+  # -------------------------------------------------------------------------
+  deploy-prod:
+    name: prod
+    needs: [version, deploy-test, approval-summary]
+    if: ${{ !inputs.skip-prod }}
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: prod
+      version: ${{ needs.version.outputs.version }}
+      namespace: dinehub-prod
+      values-file: deploy/helm/values-prod.yaml
+    secrets:
+      KUBECONFIG: ${{ secrets.KUBECONFIG_PROD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET_PROD }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD_PROD }}
+
+  # -------------------------------------------------------------------------
+  # The release record
+  # -------------------------------------------------------------------------
+  release:
+    name: Record the release
+    needs: [version, deploy-prod]
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # creating a release
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          path: sboms
+          merge-multiple: true
+
+      - name: Resolve the deployed digests
+        id: digests
+        # Digests, not tags. A tag is mutable; a digest is the artefact. This is
+        # what makes "is production running what test approved?" a question you
+        # answer by reading rather than by trusting.
+        run: |
+          echo "table<<EOF" >> "$GITHUB_OUTPUT"
+          for svc in api-gateway auth-service menu-service order-service \
+                     payment-service kitchen-service notification-service web; do
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${svc}:${{ needs.version.outputs.version }}"
+            DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}' 2>/dev/null || echo 'unavailable')
+            printf '| `%s` | `%s` |\n' "$svc" "$DIGEST" >> "$GITHUB_OUTPUT"
+          done
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: ${{ needs.version.outputs.version }}
+          files: sboms/*.spdx.json
+          body: |
+            Deployed to dev, test and production from commit `${{ github.sha }}`.
+
+            ## Changes
+
+            ${{ needs.version.outputs.changelog }}
+
+            ## Images
+
+            The **same digests** ran in all three environments — see
+            [ADR 0002](docs/adr/0002-build-once-deploy-many.md).
+
+            | Service | Digest |
+            |---|---|
+            ${{ steps.digests.outputs.table }}
+
+            ## SBOMs
+
+            An SPDX SBOM per image is attached to this release.
+
+            ## Rolling this back
+
+            ```bash
+            ./deploy/scripts/rollback.sh --env prod
+            ```
+
+            Database migrations are **not** reverted — see
+            [docs/ROLLBACK_RUNBOOK.md](docs/ROLLBACK_RUNBOOK.md).
