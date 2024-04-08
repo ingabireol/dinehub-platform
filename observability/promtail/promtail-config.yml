@@ -1,0 +1,136 @@
+# ---------------------------------------------------------------------------
+# Promtail — ships container stdout into Loki.
+#
+# The services log JSON (services/common/src/main/resources/logback-spring.xml),
+# so the pipeline parses it and promotes a small, fixed set of fields to labels.
+#
+# Which fields become labels is the one decision that matters here. Every
+# distinct combination of label values is a separate stream in Loki, so a label
+# with unbounded values — traceId, userId, the message itself — multiplies
+# streams until queries crawl. `service`, `level` and `environment` are bounded
+# and are what people actually filter on. traceId is kept as structured
+# metadata instead: still queryable, not a stream.
+# ---------------------------------------------------------------------------
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+
+scrape_configs:
+
+  - job_name: dinehub
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+        filters:
+          # The observability overlay merges into the same Compose project, so
+          # this collects the platform's own containers too. That is deliberate:
+          # when Loki stops receiving logs, the reason is usually in Promtail's.
+          - name: label
+            values: ["com.docker.compose.project=dinehub"]
+
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - target_label: 'environment'
+        replacement: 'local'
+      # Separate the platform from the things watching it, so a query for the
+      # application's logs is not full of Prometheus's.
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        regex: '(prometheus|alertmanager|alert-sink|loki|promtail|grafana)'
+        target_label: 'tier'
+        replacement: 'observability'
+      - source_labels: ['tier']
+        regex: '^$'
+        target_label: 'tier'
+        replacement: 'platform'
+
+    pipeline_stages:
+      # Docker's JSON log driver wraps each line; unwrap it first, then parse the
+      # application's own JSON out of the message.
+      - docker: {}
+
+      # Only the Java services log JSON. Everything else — Postgres, RabbitMQ,
+      # nginx, the observability stack — logs plain text, and a json stage that
+      # fails on those drops the lines. So the parse applies to the services and
+      # nothing else; the rest arrive as written.
+      - match:
+          selector: '{tier="platform", service=~"api-gateway|auth-service|menu-service|order-service|payment-service|kitchen-service|notification-service"}'
+          stages:
+            # The services log JSON everywhere except under the `local` profile,
+            # which the Compose stack uses and which renders colourised text so
+            # that `docker compose logs` is readable. Strip the colour codes
+            # first, or every level ends up as a label containing escape
+            # sequences.
+            - replace:
+                expression: '(\x1b\[[0-9;]*m)'
+                replace: ''
+
+            - json:
+                expressions:
+                  level: level
+                  traceId: traceId
+                  userId: userId
+                  logger: logger
+                  message: message
+                  timestamp: timestamp
+
+            # The plain-text fallback, for the `local` profile. A stage whose
+            # pattern does not match is a no-op, so the two run happily
+            # together: JSON lines are handled above and ignored here, text
+            # lines the other way round. Without this, searching local logs by
+            # traceId silently returns nothing — the id is right there in the
+            # line, just not extracted — and the difference between
+            # environments only shows up when someone needs it.
+            - regex:
+                expression: '^(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3}) +(?P<lvl>TRACE|DEBUG|INFO|WARN|ERROR) +(?P<lgr>\S+) +\[(?P<tid>[^\]]*)\] - (?P<msg>.*)$'
+            - template:
+                source: level
+                template: '{{ if .Value }}{{ .Value }}{{ else }}{{ .lvl }}{{ end }}'
+            - template:
+                source: traceId
+                template: '{{ if .Value }}{{ .Value }}{{ else }}{{ .tid }}{{ end }}'
+            - template:
+                source: logger
+                template: '{{ if .Value }}{{ .Value }}{{ else }}{{ .lgr }}{{ end }}'
+
+            - timestamp:
+                source: timestamp
+                format: RFC3339Nano
+                fallback_formats: [RFC3339, UnixMs]
+                # Keep the line with a nudged timestamp rather than dropping it.
+                # A log line that cannot be parsed is usually the interesting one.
+                action_on_failure: fudge
+
+            - labels:
+                level:
+
+            # traceId is high-cardinality and must not be a label. As structured
+            # metadata it is still queryable —
+            #   {service="order-service"} | traceId=`…`
+            # — without creating a stream per request.
+            - structured_metadata:
+                traceId:
+                userId:
+                logger:
+
+            - output:
+                source: message
+
+      - labels:
+          service:
+          environment:
+          tier:

@@ -92,6 +92,28 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Micrometer's default for a Timer is a summary carrying client-side
+      # quantiles. Those cannot be aggregated: the mean of three pods' p95 is
+      # not the p95 of anything, so every latency number goes quietly wrong the
+      # moment a service runs more than one replica. Histogram buckets can be
+      # summed, so histogram_quantile computes the real figure across the fleet.
+      # Without this, http_server_requests_seconds_bucket does not exist at all
+      # and every latency panel and the LatencyDegraded alert return nothing —
+      # which is worse than a wrong number, because nothing looks like silence.
+      percentiles-histogram:
+        http.server.requests: true
+      # Bounds keep the bucket count finite. Unbounded, Micrometer emits around
+      # seventy buckets per timer, and that multiplies by every label value.
+      minimum-expected-value:
+        http.server.requests: 5ms
+      maximum-expected-value:
+        http.server.requests: 10s
+      # The boundaries that matter, which are the same numbers as the dashboard
+      # thresholds and the LatencyDegraded alert. A panel turning amber and an
+      # alert firing should be the same event, not two approximations of it.
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
   info:
     git:
       mode: full

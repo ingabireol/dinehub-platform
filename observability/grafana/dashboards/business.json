@@ -1,0 +1,1651 @@
+{
+  "uid": "dinehub-business",
+  "title": "DineHub \u2014 Business",
+  "description": "Orders, payments, the kitchen and notifications. Every panel here can be wrong while every service is green, which is the point of having it.",
+  "tags": [
+    "dinehub",
+    "business"
+  ],
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "DineHub",
+      "tags": [
+        "dinehub"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Orders placed",
+      "description": "Over the dashboard's time range. The number the restaurant cares about; every technical metric on the other dashboards exists to keep this one moving.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(dinehub_orders_placed_total[$__range]))",
+          "legendFormat": "orders",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Payment success rate",
+      "description": "Completed against completed plus failed. In dev and test a share of payments is declined on purpose, so a number below 100 here is expected outside production.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 4,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(increase(dinehub_payments_completed_total[$__range])) / clamp_min(sum(increase(dinehub_payments_completed_total[$__range])) + sum(increase(dinehub_payments_failed_total[$__range])), 1)",
+          "legendFormat": "success",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cancellation rate",
+      "description": "Cancelled as a share of placed. Rises when payments are failing, so read it next to the panel on its left before concluding anything about customers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 9,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(increase(dinehub_orders_cancelled_total[$__range])) / clamp_min(sum(increase(dinehub_orders_placed_total[$__range])), 1)",
+          "legendFormat": "cancelled",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Median preparation time",
+      "description": "From the kitchen accepting a ticket to marking it ready. The one number here that no amount of engineering improves.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 14,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(dinehub_kitchen_preparation_duration_seconds_bucket[$__range])))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Orders stuck",
+      "description": "Orders that have sat in PLACED past the sweep threshold. Anything other than zero means the event chain has broken somewhere between order and payment \u2014 start at the dead-letter queue.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(dinehub_orders_stuck)",
+          "legendFormat": "stuck",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Orders",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Orders placed and cancelled",
+      "description": "Per minute. The two lines move together during a payment incident, which is how you tell one from a change in demand.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_orders_placed_total[$__rate_interval])) * 60",
+          "legendFormat": "placed",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_orders_cancelled_total[$__rate_interval])) * 60",
+          "legendFormat": "cancelled",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "placed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cancelled"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Status transitions",
+      "description": "Every move an order makes, by transition. A transition that stops appearing is a stage of the pipeline that has stopped running, and it is visible here before any customer complains.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (from, to) (rate(dinehub_orders_status_changed_total[$__rate_interval])) * 60",
+          "legendFormat": "{{from}} \u2192 {{to}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Order placement latency",
+      "description": "How long placing an order takes end to end, including the menu lookup and the price snapshot.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(dinehub_orders_placement_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dinehub_orders_placement_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Orders stuck in PLACED",
+      "description": "Published by the sweep in order-service. Zero is the only acceptable resting value; a step up that never comes down means the sweep is finding the same orders every run.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (status) (dinehub_orders_stuck)",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Payments",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Payments completed and failed",
+      "description": "Per minute. Failures are expected in dev and test \u2014 PAYMENT_FAILURE_RATE is set to 0.1 there on purpose, so the cancellation path is code that runs constantly rather than code nobody has ever seen work.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_payments_completed_total[$__rate_interval])) * 60",
+          "legendFormat": "completed",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_payments_failed_total[$__rate_interval])) * 60",
+          "legendFormat": "failed",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "completed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payment failure rate",
+      "description": "The same two counters as a ratio, which is the form worth alerting on \u2014 the absolute failure count rises with traffic and tells you nothing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(rate(dinehub_payments_failed_total[$__rate_interval])) / clamp_min(sum(rate(dinehub_payments_completed_total[$__rate_interval])) + sum(rate(dinehub_payments_failed_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "failure rate",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Kitchen",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Tickets waiting",
+      "description": "Queue depth as the kitchen sees it. Nothing else on the platform reports that customers are waiting, because nothing else is broken when they are.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(dinehub_kitchen_queue_depth)",
+          "legendFormat": "tickets",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Preparation time",
+      "description": "p50 and p95, from acceptance to ready.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 33
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(dinehub_kitchen_preparation_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dinehub_kitchen_preparation_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Data problems the kitchen sees",
+      "description": "Two counters the kitchen service keeps about the events it receives: tickets that arrived with no line items, and cancellations that arrived after cooking had started. Both are integration faults rather than kitchen faults, and neither shows up anywhere else.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 33
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_kitchen_ticket_without_contents_total[$__rate_interval])) * 60",
+          "legendFormat": "empty tickets",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(dinehub_kitchen_cancelled_too_late_total[$__rate_interval])) * 60",
+          "legendFormat": "cancelled too late",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "empty tickets"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cancelled too late"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Notifications",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Notifications created",
+      "description": "By type. Each one corresponds to an event the platform handled correctly all the way to the end of the chain, which makes this the cheapest end-to-end health signal there is.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (type) (rate(dinehub_notifications_total[$__rate_interval])) * 60",
+          "legendFormat": "{{type}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

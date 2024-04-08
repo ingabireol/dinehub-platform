@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Prometheus for DineHub.
+#
+# Scrapes every service's Micrometer endpoint. In Kubernetes the ServiceMonitors
+# the chart creates do this instead; this file is what the local Compose stack
+# and a plain Prometheus use, so both paths are covered.
+# ---------------------------------------------------------------------------
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    platform: dinehub
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # --- The services --------------------------------------------------------
+  - job_name: dinehub-services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['api-gateway:8080']
+        labels: { service: api-gateway, tier: edge }
+      - targets: ['auth-service:8081']
+        labels: { service: auth-service, tier: application }
+      - targets: ['menu-service:8082']
+        labels: { service: menu-service, tier: application }
+      - targets: ['order-service:8083']
+        labels: { service: order-service, tier: application }
+      - targets: ['payment-service:8084']
+        labels: { service: payment-service, tier: application }
+      - targets: ['kitchen-service:8085']
+        labels: { service: kitchen-service, tier: application }
+      - targets: ['notification-service:8086']
+        labels: { service: notification-service, tier: application }
+
+    metric_relabel_configs:
+      # Per-URI histograms explode cardinality on an API with path parameters:
+      # every order id becomes its own series. Keeping the aggregate and
+      # dropping the long tail is the difference between a Prometheus that works
+      # and one that runs out of memory in a fortnight.
+      - source_labels: [__name__, uri]
+        regex: 'http_server_requests_seconds_bucket;/api/v1/(orders|payments|notifications)/[0-9a-f-]{36}.*'
+        action: drop
+      - source_labels: [__name__]
+        regex: 'jvm_buffer_.*|process_start_time_seconds'
+        action: drop
+
+  # --- RabbitMQ ------------------------------------------------------------
+  # The broker's own metrics, which are the only place queue depth and
+  # dead-letter counts come from. rabbitmq_prometheus ships enabled in the
+  # official image and listens on 15692; nothing needs to be turned on.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ['rabbitmq:15692']
+        labels: { service: rabbitmq, tier: infrastructure }
+
+  # --- Kubernetes service discovery ----------------------------------------
+  # Used when running in-cluster without the Prometheus Operator. The chart adds
+  # the scrape annotations this reads, so both setups work unchanged.
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        target_label: service
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace

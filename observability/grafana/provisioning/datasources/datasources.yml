@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# Datasources, provisioned from the repository.
+#
+# Nothing here is clicked into existence. A Grafana that was configured by hand
+# is a Grafana nobody can rebuild, and the first thing anyone asks after an
+# incident is "can I see that dashboard" — not "can you re-add the datasource".
+# ---------------------------------------------------------------------------
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+  - name: Loki
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: dinehub-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s          # matches the scrape interval; rate() needs it
+      httpMethod: POST
+      manageAlerts: false
+      exemplarTraceIdDestinations:
+        - name: traceId
+          datasourceUid: dinehub-loki
+
+  - name: Loki
+    type: loki
+    uid: dinehub-loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 2000
+      # A traceId in a log line becomes a link. This is the whole point of
+      # putting the id in the MDC in the first place: an error on a dashboard
+      # leads to the lines for that one request, not to a time range.
+      derivedFields:
+        - name: traceId
+          matcherType: label
+          matcherRegex: traceId
+          url: '/explore?left={"datasource":"dinehub-loki","queries":[{"expr":"{environment=\"local\"} | traceId=\"${__value.raw}\""}]}'
+          datasourceUid: dinehub-loki

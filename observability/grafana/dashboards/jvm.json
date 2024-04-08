@@ -1,0 +1,1494 @@
+{
+  "uid": "dinehub-jvm",
+  "title": "DineHub \u2014 JVM and runtime",
+  "description": "Heap, garbage collection, connection pools and threads for every service. Opened when the overview says a service is slow and the question is why.",
+  "tags": [
+    "dinehub",
+    "jvm",
+    "runtime"
+  ],
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "dinehub-prometheus"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "query": {
+          "query": "label_values(up{job=~\"dinehub.*\"}, service)",
+          "refId": "svc"
+        },
+        "definition": "label_values(up{job=~\"dinehub.*\"}, service)",
+        "sort": 1,
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "DineHub",
+      "tags": [
+        "dinehub"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Heap used",
+      "description": "Across the selected services. Growth that never comes back down between collections is the shape of a leak.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(jvm_memory_used_bytes{job=~\"dinehub.*\", service=~\"$service\", area=\"heap\"})",
+          "legendFormat": "heap",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Worst heap pressure",
+      "description": "The service closest to its own heap ceiling. An average across services would hide exactly the one about to be killed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * max(jvm_memory_used_bytes{job=~\"dinehub.*\", service=~\"$service\", area=\"heap\"} / clamp_min(jvm_memory_max_bytes{job=~\"dinehub.*\", service=~\"$service\", area=\"heap\"}, 1))",
+          "legendFormat": "worst",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 92
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "GC overhead",
+      "description": "Share of wall-clock time spent collecting. Above a few percent the JVM is working for itself rather than for anyone else.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * max(jvm_gc_overhead{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "overhead",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Live threads",
+      "description": "Total across the selected services. A number that only goes up is a thread leak, usually an executor nobody shuts down.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 15,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(jvm_threads_live_threads{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "threads",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Process CPU",
+      "description": "Highest of the selected services, as a share of one core's worth of the container's allowance.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * max(process_cpu_usage{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "cpu",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Memory",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Heap used by service",
+      "description": "Used, not committed. The sawtooth is normal; a floor that climbs between teeth is not.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (jvm_memory_used_bytes{job=~\"dinehub.*\", service=~\"$service\", area=\"heap\"})",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Heap used after collection",
+      "description": "What survives a full collection, which is the number a leak actually shows up in. The live-set rising steadily over hours is the signal; the raw heap graph above is too noisy to read it from.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (jvm_gc_live_data_size_bytes{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Garbage collection",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause time",
+      "description": "Seconds of pause per second of wall clock, by collection cause. Every request in flight stops for this.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service, cause) (rate(jvm_gc_pause_seconds_sum{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}} \u00b7 {{cause}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Allocation rate",
+      "description": "Bytes promoted into the heap per second. High and steady is ordinary; a step change usually means a new code path allocating per request.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (rate(jvm_gc_memory_allocated_bytes_total{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Connection pools and threads",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari connections \u2014 active and idle",
+      "description": "Per service. Active pinned at the maximum with idle at zero means the pool is the bottleneck, whatever the database thinks.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (hikaricp_connections_active{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}} active",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (hikaricp_connections_idle{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}} idle",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Threads waiting for a connection",
+      "description": "Anything above zero is a request blocked on the pool rather than on the database. This is the panel that distinguishes 'the database is slow' from 'we did not give it enough connections'.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (hikaricp_connections_pending{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Live and daemon threads",
+      "description": "Per service, with daemon threads shown separately so a growing pool is distinguishable from a growing request load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (jvm_threads_live_threads{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}} live",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (jvm_threads_daemon_threads{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}} daemon",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Process",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU usage",
+      "description": "Process and system, as a share of the available cores.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (service) (process_cpu_usage{job=~\"dinehub.*\", service=~\"$service\"}) * 100",
+          "legendFormat": "{{service}} process",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open file descriptors",
+      "description": "Against the process limit. Sockets count, so a client that never closes connections arrives here first.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (service) (process_files_open_files{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Uptime",
+      "description": "Resets to zero on every restart, which makes restarts visible even when the pod metrics are not being collected. Uptime rather than process_start_time_seconds, which the scrape config drops.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (service) (process_uptime_seconds{job=~\"dinehub.*\", service=~\"$service\"})",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

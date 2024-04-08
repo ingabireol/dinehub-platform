@@ -31,7 +31,12 @@ public class NotificationService {
     public void record(UUID userId, Notification.Type type, String title,
                        String message, UUID relatedOrderId) {
         notifications.save(new Notification(userId, type, title, message, relatedOrderId));
-        meterRegistry.counter("dinehub.notifications.created", "type", type.name()).increment();
+        // "dinehub.notifications", not "dinehub.notifications.created".
+        // Micrometer strips a trailing ".created" when it renders a counter for
+        // Prometheus, because _created is reserved there for a counter's own
+        // creation timestamp. The meter would be named here one way and exported
+        // another, and every query written from this line would return nothing.
+        meterRegistry.counter("dinehub.notifications", "type", type.name()).increment();
 
         // The "simulated email and SMS" the brief asks for. Logged rather than
         // sent, and said plainly: pretending to integrate with a provider that

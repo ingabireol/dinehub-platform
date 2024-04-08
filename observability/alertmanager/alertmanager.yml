@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Alertmanager.
+#
+# Routing is by severity, and the two severities mean different things:
+# critical is "wake someone", warning is "look at it during the day". An alert
+# that does not fit one of those is not an alert, it is a dashboard panel.
+#
+# The receivers here point at a local webhook, because a portfolio repository
+# must not carry a real Slack or PagerDuty URL. In a real deployment these are
+# the only lines that change, and the values come from the environment rather
+# than from this file.
+# ---------------------------------------------------------------------------
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ['alertname', 'service', 'severity']
+  # Hold a new group briefly so a deploy that trips six alerts at once sends one
+  # notification rather than six.
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+  routes:
+    - matchers: ['severity = critical']
+      receiver: critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+    - matchers: ['severity = warning']
+      receiver: warning
+      repeat_interval: 24h
+
+inhibit_rules:
+  # A service that is down will also be failing its error-rate and latency
+  # alerts. Sending all three says nothing the first one did not.
+  - source_matchers: ['alertname = ServiceDown']
+    target_matchers: ['severity =~ "warning|critical"']
+    equal: ['service']
+
+  # Likewise, a critical alert for a service suppresses its warnings.
+  - source_matchers: ['severity = critical']
+    target_matchers: ['severity = warning']
+    equal: ['alertname', 'service']
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://alert-sink:8080/alerts
+        send_resolved: true
+
+  - name: critical
+    webhook_configs:
+      - url: http://alert-sink:8080/alerts/critical
+        send_resolved: true
+        # In a real deployment, alongside (not instead of) the webhook:
+        #   slack_configs:
+        #     - api_url_file: /run/secrets/slack_webhook_url
+        #       channel: '#dinehub-alerts'
+
+  - name: warning
+    webhook_configs:
+      - url: http://alert-sink:8080/alerts/warning
+        send_resolved: true

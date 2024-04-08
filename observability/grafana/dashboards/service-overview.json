@@ -1,0 +1,1282 @@
+{
+  "uid": "dinehub-overview",
+  "title": "DineHub \u2014 Service overview",
+  "description": "Rate, errors and duration for every service, plus the endpoints and log lines behind them. The first dashboard to open; the others explain what this one shows.",
+  "tags": [
+    "dinehub",
+    "red",
+    "overview"
+  ],
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "dinehub-prometheus"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "query": {
+          "query": "label_values(up{job=~\"dinehub.*\"}, service)",
+          "refId": "svc"
+        },
+        "definition": "label_values(up{job=~\"dinehub.*\"}, service)",
+        "sort": 1,
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "DineHub",
+      "tags": [
+        "dinehub"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Services up",
+      "description": "Prometheus targets answering. Not the same as working \u2014 a service can answer /actuator/prometheus while its database is unreachable \u2014 but a number below the expected count is always worth acting on.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(up{job=~\"dinehub.*\", service=~\"$service\"} == 1)",
+          "legendFormat": "up",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "green",
+                "value": 7
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Requests / sec",
+      "description": "Across every selected service, averaged over five minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 4,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\"}[5m]))",
+          "legendFormat": "rps",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Error rate",
+      "description": "5xx responses as a share of all responses. 4xx is excluded deliberately: a client sending a bad request is not the platform failing, and counting it here trains people to ignore the number.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 9,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\", status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\"}[5m])), 1e-9)",
+          "legendFormat": "errors",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "p95 latency",
+      "description": "95th percentile across the selected services. The average hides the experience of the people having a bad time, which is the only part worth measuring.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 14,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[5m])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Success rate",
+      "description": "Non-5xx responses over the dashboard's time range. The service-level objective is 99.5%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * (1 - (sum(rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\", status=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval])), 1e-9)))",
+          "legendFormat": "success",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 95,
+          "max": 100,
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 99
+              },
+              {
+                "color": "green",
+                "value": 99.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Rate, errors, duration",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by service",
+      "description": "Who is being asked to do what. A service that goes flat has either stopped being called or stopped answering, and the error panel below says which.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx rate by service",
+      "description": "Server errors only. A line that appears here corresponds to a line in the application log with the same traceId \u2014 follow it in Explore.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\", status=~\"5..\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency percentiles \u2014 all services",
+      "description": "p50, p95 and p99 together. One y-axis, as always: the three series share a unit and a scale, so they can be compared by eye.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "range": true,
+          "instant": false,
+          "refId": "C",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-blue"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency by service",
+      "description": "Where the time actually goes. The gateway's p95 includes its downstream call, so a rise there with nothing behind it means the gateway itself.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Endpoints",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Slowest endpoints",
+      "description": "p95 per endpoint, worst first. Per-id URIs are dropped at scrape time (see observability/prometheus/prometheus.yml), so each row is a route rather than one customer's order.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(12, histogram_quantile(0.95, sum by (service, uri, method, le) (rate(http_server_requests_seconds_bucket{job=~\"dinehub.*\", service=~\"$service\"}[$__rate_interval]))))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "red",
+                      "value": 1.5
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "tier": true,
+              "platform": true,
+              "__name__": true,
+              "namespace": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "uri": "Endpoint",
+              "method": "Method",
+              "Value": "p95"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "p95",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Endpoints returning errors",
+      "description": "Every route with a non-2xx response in the range, by status. Empty is the expected state.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(12, sum by (service, uri, status) (increase(http_server_requests_seconds_count{job=~\"dinehub.*\", service=~\"$service\", status=~\"[45]..\"}[$__range])))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 500
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "tier": true,
+              "platform": true,
+              "__name__": true,
+              "namespace": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "uri": "Endpoint",
+              "status": "Status",
+              "Value": "Count"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Count",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Recent errors",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "ERROR and WARN lines",
+      "description": "From Loki. Click a line and follow its traceId to every other line for the same request, across services.",
+      "datasource": {
+        "type": "loki",
+        "uid": "dinehub-loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "dinehub-loki"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "queryType": "range",
+          "expr": "{service=~\"$service\", level=~\"ERROR|WARN\"}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}

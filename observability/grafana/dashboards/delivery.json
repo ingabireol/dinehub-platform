@@ -1,0 +1,1362 @@
+{
+  "uid": "dinehub-delivery",
+  "title": "DineHub \u2014 Delivery and release health",
+  "description": "Did the last release land cleanly, what is actually running, and are the backups happening. Reads kube-state-metrics, so it needs a cluster.",
+  "tags": [
+    "dinehub",
+    "delivery",
+    "kubernetes"
+  ],
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "dinehub-prometheus"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "query": {
+          "query": "label_values(kube_pod_info{namespace=~\"dinehub-.*\"}, namespace)",
+          "refId": "ns"
+        },
+        "definition": "label_values(kube_pod_info{namespace=~\"dinehub-.*\"}, namespace)",
+        "current": {
+          "selected": false,
+          "text": "dinehub-dev",
+          "value": "dinehub-dev"
+        },
+        "sort": 1,
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "DineHub",
+      "tags": [
+        "dinehub"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "This dashboard reads **kube-state-metrics**, so it is empty against the local Compose stack and populated against a cluster. Pick the namespace above. The question it answers is *did the last release land cleanly*, which is a different question from *is the platform healthy* \u2014 that one is on the service overview."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Deployments at full strength",
+      "description": "Deployments whose ready replica count equals what was asked for. Anything less means a rollout is in progress or a pod cannot start.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(kube_deployment_status_replicas_available{namespace=\"$namespace\"} >= on(deployment) kube_deployment_spec_replicas{namespace=\"$namespace\"})",
+          "legendFormat": "ready",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Pods not ready",
+      "description": "Containers running but failing their readiness probe. During a deploy this is briefly non-zero; afterwards it is the clearest sign a release did not take.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(kube_pod_status_ready{namespace=\"$namespace\", condition=\"false\"})",
+          "legendFormat": "not ready",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Restarts in the last hour",
+      "description": "Across every container in the namespace. A pod that restarts repeatedly is usually either out of memory or failing its liveness probe, and the panels below say which.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\"}[1h]))",
+          "legendFormat": "restarts",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Time since last deploy",
+      "description": "Age of the youngest pod created by a Deployment, which is as close as kube-state-metrics gets to a release timestamp.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 15,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "time() - max(kube_pod_created{namespace=\"$namespace\", pod=~\"dinehub-.*\"})",
+          "legendFormat": "age",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Hours since last backup",
+      "description": "Production only. The dangerous failure is not a backup that fails loudly but a CronJob that quietly stopped being scheduled, and this is the number that shows it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(time() - max(kube_job_status_completion_time{namespace=\"$namespace\", job_name=~\"dinehub-db-backup.*\"})) / 3600",
+          "legendFormat": "hours",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 26
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "What is deployed",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Running image per service",
+      "description": "Straight from the container spec. The tag is <semver>-<sha>; the pipeline builds it once and deploys that same digest to dev, test and production, so a tag that differs between namespaces means something was deployed by hand.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "kube_pod_container_info{namespace=\"$namespace\", container=~\"api-gateway|auth-service|menu-service|order-service|payment-service|kitchen-service|notification-service|web\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "job": true,
+              "instance": true,
+              "uid": true,
+              "container_id": true,
+              "namespace": true,
+              "platform": true,
+              "__name__": true,
+              "pod": true,
+              "image_spec": true,
+              "image": true
+            },
+            "renameByName": {
+              "container": "Service",
+              "image_id": "Digest"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Service",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Replica state",
+      "description": "Desired against available, per Deployment. A row where the two disagree is a rollout that has not finished \u2014 or has finished badly.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "kube_deployment_spec_replicas{namespace=\"$namespace\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "kube_deployment_status_replicas_available{namespace=\"$namespace\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Available"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "deployment",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true,
+              "Time 2": true,
+              "job 1": true,
+              "job 2": true,
+              "instance 1": true,
+              "instance 2": true,
+              "namespace 1": true,
+              "namespace 2": true,
+              "platform 1": true,
+              "platform 2": true,
+              "__name__ 1": true,
+              "__name__ 2": true
+            },
+            "renameByName": {
+              "deployment": "Deployment",
+              "Value #A": "Desired",
+              "Value #B": "Available"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Stability",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Container restarts",
+      "description": "Per container, over the range. A single restart after a deploy is ordinary; a line that keeps climbing is a crash loop.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (container) (increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\"}[$__rate_interval]))",
+          "legendFormat": "{{container}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pods not ready, by service",
+      "description": "The same measure as the tile at the top, split out, so the service holding up a rollout is identifiable without reading pod names.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (kube_pod_status_ready{namespace=\"$namespace\", condition=\"false\"})",
+          "legendFormat": "{{pod}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory against the limit",
+      "description": "Working set as a share of the container's limit. A pod that reaches 100 here is killed by the kernel, and appears in the restart panel a moment later with no log line explaining why.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum by (container) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}) / clamp_min(sum by (container) (kube_pod_container_resource_limits{namespace=\"$namespace\", resource=\"memory\"}), 1)",
+          "legendFormat": "{{container}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU against the request",
+      "description": "Usage over the requested amount. Consistently above 100% means the request is wrong, which matters for scheduling even though nothing is throttled.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[$__rate_interval])) / clamp_min(sum by (container) (kube_pod_container_resource_requests{namespace=\"$namespace\", resource=\"cpu\"}), 0.001)",
+          "legendFormat": "{{container}}",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Backups",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Backup jobs",
+      "description": "Succeeded against failed. A backup nobody checks is a backup nobody has.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(kube_job_status_succeeded{namespace=\"$namespace\", job_name=~\"dinehub-db-backup.*\"}[$__rate_interval]))",
+          "legendFormat": "succeeded",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(kube_job_status_failed{namespace=\"$namespace\", job_name=~\"dinehub-db-backup.*\"}[$__rate_interval]))",
+          "legendFormat": "failed",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          },
+          "mappings": [],
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "succeeded"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Age of the most recent successful backup",
+      "description": "Rises by one hour every hour and drops to zero when a backup completes. A sawtooth is healthy; a straight line going up is the CronJob not running at all, which nothing else reports.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dinehub-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dinehub-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(time() - max(kube_job_status_completion_time{namespace=\"$namespace\", job_name=~\"dinehub-db-backup.*\"})) / 3600",
+          "legendFormat": "hours",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "interval": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

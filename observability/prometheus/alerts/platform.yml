@@ -1,0 +1,278 @@
+---
+# ---------------------------------------------------------------------------
+# Platform alerts.
+#
+# One rule governs what belongs here: if this fires at 03:00, is there something
+# a person should do right now? If not, it is a dashboard panel, not an alert.
+# Every rule therefore carries the action to take.
+#
+# The `for:` durations are chosen so a transient blip does not page anyone. An
+# alert that fires and clears by itself teaches people to ignore alerts.
+# ---------------------------------------------------------------------------
+groups:
+
+  - name: availability
+    interval: 30s
+    rules:
+
+      - alert: ServiceDown
+        expr: up{job=~"dinehub.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is not responding to scrapes"
+          description: >-
+            No metrics from {{ $labels.service }} for two minutes. Either the
+            pod is gone or the actuator endpoint has stopped answering.
+          action: >-
+            kubectl get pods -n dinehub-prod -l app.kubernetes.io/name={{ $labels.service }}
+            then kubectl logs. If the JVM exited, check for an OOM kill before
+            restarting — restarting without changing anything will reproduce it.
+          runbook: docs/INCIDENT_RUNBOOK.md#one-service-failing
+
+      - alert: AllOrderServiceInstancesDown
+        expr: count(up{service="order-service"} == 1) == 0
+        for: 1m
+        labels:
+          severity: critical
+          page: immediate
+        annotations:
+          summary: "No order-service instance is up — nobody can order anything"
+          action: "Full outage. docs/INCIDENT_RUNBOOK.md from the top."
+
+      - alert: PodRestartLoop
+        expr: increase(kube_pod_container_status_restarts_total{namespace=~"dinehub-.*"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.pod }} has restarted {{ $value | humanize }} times in 15 minutes"
+          description: >-
+            A crash loop. Kubernetes is backing off, so the service is
+            effectively down even though the pod exists.
+          action: >-
+            kubectl describe pod to see the reason, then kubectl logs --previous
+            for the logs of the run that failed — the current container has not
+            got there yet.
+
+  - name: request-health
+    interval: 30s
+    rules:
+
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+          / sum by (service) (rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is returning {{ $value | humanizePercentage }} server errors"
+          action: >-
+            Check whether this started at the deployment annotation on the
+            dashboard. If so, roll back — docs/ROLLBACK_RUNBOOK.md — and
+            diagnose afterwards.
+          runbook: docs/ROLLBACK_RUNBOOK.md
+
+      - alert: LatencyDegraded
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_server_requests_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} p95 latency is {{ $value | humanizeDuration }}"
+          description: "Users notice this well before it becomes an error."
+          action: >-
+            Work down the stack: GC overhead, then connection pool, then the
+            database. The Service Overview dashboard has all three side by side.
+
+  - name: jvm
+    interval: 30s
+    rules:
+
+      - alert: JVMGCOverhead
+        expr: |
+          sum by (service, instance) (rate(jvm_gc_pause_seconds_sum[5m])) > 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is spending {{ $value | humanizePercentage }} of its time in GC"
+          description: >-
+            The classic pre-OOM signature: the JVM is alive and collecting
+            garbage rather than serving requests.
+          action: >-
+            Capture a heap dump before restarting — a restart destroys the only
+            evidence. jcmd <pid> GC.heap_dump.
+
+      - alert: JVMHeapPressure
+        expr: |
+          sum by (service, instance) (jvm_memory_used_bytes{area="heap"})
+          / sum by (service, instance) (jvm_memory_max_bytes{area="heap"}) > 0.90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} is using {{ $value | humanizePercentage }} of its heap"
+          description: >-
+            High heap use on its own is not a problem — a well-used heap looks
+            like this. Check the GC overhead alert: if that is also firing, it
+            is a real memory problem.
+
+      - alert: ConnectionPoolExhausted
+        expr: hikaricp_connections_pending > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} has threads waiting for a database connection"
+          description: >-
+            Requests are queueing for connections. This cascades into timeouts
+            across every endpoint that touches the database.
+          action: >-
+            Find the slow query first. Enlarging the pool without doing that
+            just moves the queue.
+
+  - name: messaging
+    interval: 30s
+    rules:
+
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_queue_messages{queue="dinehub.dlq"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} message(s) in the dead-letter queue"
+          description: >-
+            Events that failed every retry. Nothing retries them and nothing
+            deletes them — each one is work that did not happen, and some of
+            them are real orders.
+          action: >-
+            Read one in the RabbitMQ UI to see which consumer and which error.
+            docs/INCIDENT_RUNBOOK.md#dead-letter-queue. Fix the cause before
+            replaying, or you refill the queue and lose the count.
+          runbook: docs/INCIDENT_RUNBOOK.md#dead-letter-queue
+
+      - alert: QueueBacklogGrowing
+        expr: |
+          rabbitmq_queue_messages{queue!~"dinehub.dlq"} > 100
+          and deriv(rabbitmq_queue_messages{queue!~"dinehub.dlq"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue {{ $labels.queue }} has {{ $value }} messages and is still growing"
+          description: >-
+            The consumer is not keeping up, or has stopped. A depth that only
+            rises means nothing is consuming.
+          action: "Check the consumer's logs and its replica count."
+
+      - alert: NoConsumersOnQueue
+        expr: rabbitmq_queue_consumers{queue!~"dinehub.dlq"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nothing is consuming {{ $labels.queue }}"
+          description: >-
+            Messages are accumulating with no one to process them. The service
+            that owns this queue is named in it.
+          action: "Check that service is running and can reach the broker."
+
+  - name: business
+    interval: 60s
+    rules:
+
+      - alert: OrdersStuck
+        expr: dinehub_orders_stuck{status="PLACED"} > 3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} orders have not moved on from PLACED"
+          description: >-
+            This is what a lost event looks like from the outside: no exception,
+            no dead-lettered message, just customers waiting.
+          action: >-
+            Work along the chain — is order-service publishing, is RabbitMQ
+            holding the messages, is payment-service consuming?
+            docs/INCIDENT_RUNBOOK.md#orders-not-progressing
+          runbook: docs/INCIDENT_RUNBOOK.md#orders-not-progressing
+
+      - alert: PaymentFailureRateHigh
+        expr: |
+          rate(dinehub_payments_failed_total[15m])
+          / clamp_min(rate(dinehub_payments_failed_total[15m])
+                      + rate(dinehub_payments_completed_total[15m]), 0.001) > 0.3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of payments are failing"
+          description: >-
+            Far above the simulated rate. Check PAYMENT_FAILURE_RATE first — a
+            value of 10 instead of 0.10 declines everything.
+          action: "docs/INCIDENT_RUNBOOK.md#payments-failing"
+
+      - alert: NoOrdersPlaced
+        expr: |
+          sum(rate(dinehub_orders_placed_total[30m])) == 0
+          and on() (hour() > 9 < 21)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No orders placed in 30 minutes during service hours"
+          description: >-
+            The platform may be up and still broken. Every technical metric can
+            look fine while the thing the business cares about has stopped.
+          action: "Place an order yourself. If it works, the problem is upstream of us."
+
+      - alert: KitchenQueueBacklog
+        expr: dinehub_kitchen_queue_depth > 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} tickets are waiting for a chef"
+          description: >-
+            Not a technical fault — the kitchen is behind. Worth knowing because
+            customers are waiting and nothing else reports it.
+
+  - name: delivery
+    interval: 60s
+    rules:
+
+      - alert: BackupCronJobFailed
+        expr: |
+          kube_job_status_failed{namespace="dinehub-prod", job_name=~"dinehub-db-backup.*"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The production database backup failed"
+          description: >-
+            An untested, unverified or absent backup is the failure that only
+            becomes visible when it is too late to fix.
+          action: >-
+            kubectl logs the failed job. Run it by hand once the cause is fixed:
+            kubectl create job --from=cronjob/dinehub-db-backup manual-$(date +%s) -n dinehub-prod
+
+      - alert: BackupStale
+        expr: |
+          time() - kube_job_status_completion_time{namespace="dinehub-prod",
+                                                   job_name=~"dinehub-db-backup.*"} > 30 * 3600
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful backup in over 30 hours"
+          description: >-
+            The dangerous failure mode: the job has stopped running entirely, so
+            nothing is reporting a failure either.
+          action: "kubectl get cronjob -n dinehub-prod — is it suspended?"
