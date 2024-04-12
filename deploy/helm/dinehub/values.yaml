@@ -95,7 +95,16 @@ defaults:
   strategy:
     type: RollingUpdate
     maxSurge: 1
-    maxUnavailable: 1
+    # Zero, in every environment, and not only because surge-before-drain is the
+    # safer rollout. Helm's `--wait` considers a Deployment ready once
+    #   readyReplicas >= replicas - maxUnavailable
+    # so with one replica and maxUnavailable: 1 the bar is zero: `helm upgrade
+    # --atomic --wait` returns "Upgrade complete" within seconds, before a single
+    # new pod has passed its readiness probe, and `--atomic` never fires. A
+    # deliberately broken release was deployed to dev to check the rollback and
+    # helm reported success — the safety net was inert. See
+    # docs/adr/0006-maxunavailable-zero.md.
+    maxUnavailable: 0
 
   # Spread replicas across nodes where there is more than one, so a node loss
   # does not take a whole service.
@@ -213,6 +222,10 @@ redis:
 # --- Operational ------------------------------------------------------------
 networkPolicies:
   enabled: true
+  # The namespace Prometheus runs in. It is the only namespace allowed to reach
+  # a service's port directly; everything else goes through the gateway. Named
+  # rather than wildcarded — see the comment in templates/networkpolicies.yaml.
+  monitoringNamespace: monitoring
 
 backup:
   enabled: false
