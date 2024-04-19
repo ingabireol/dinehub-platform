@@ -83,6 +83,7 @@ spec:
               value: /var/lib/postgresql/data/pgdata
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
@@ -99,11 +100,25 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data }
             - { name: init, mountPath: /docker-entrypoint-initdb.d }
+            {{- /* The root filesystem is read-only, so the two directories
+                   PostgreSQL writes to outside its data volume are mounted
+                   explicitly. Without these it fails at startup creating its
+                   Unix socket, which looks like a configuration error and is
+                   not one. */}}
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
         - name: init
           configMap:
             name: {{ $full }}-postgres-init
-            defaultMode: 0o755
+            # 0755 in YAML 1.1 octal, which is what the Kubernetes API server parses.
+            # Written 0o755 it is read as the string "0o755" and rejected for an
+            # int32 field — and Trivy stops scanning the chart at that line.
+            defaultMode: 0755
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -158,12 +173,34 @@ spec:
         runAsUser: 999
         fsGroup: 999
         seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        {{- /* /etc/rabbitmq has to be writable — the entrypoint generates its
+               config there on every start — but it is not empty in the image:
+               it ships enabled_plugins, which is what turns on the management
+               UI and the Prometheus endpoint on 15692. Mounting a bare emptyDir
+               over it silently removes both, and the broker starts perfectly
+               well with "0 plugins started" and no metrics for anything to
+               scrape. Seeding the directory from the image keeps the shipped
+               files and makes it writable. */}}
+        - name: seed-config
+          image: {{ .Values.rabbitmq.image }}
+          command: ["sh", "-c", "cp -a /etc/rabbitmq/. /seed/ 2>/dev/null || true; ls -A /seed"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config, mountPath: /seed }
       containers:
         - name: rabbitmq
           image: {{ .Values.rabbitmq.image }}
           ports:
             - { name: amqp, containerPort: 5672 }
             - { name: management, containerPort: 15672 }
+            {{- /* rabbitmq_prometheus listens here. Queue depth and the
+                   dead-letter count come from nowhere else, and two of the
+                   alert rules read them. */}}
+            - { name: metrics, containerPort: 15692 }
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
@@ -175,8 +212,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.secrets.rabbitmq }}
                   key: password
+            {{- /* Log to stdout, where a container's logs belong and where
+                   Promtail and `kubectl logs` can see them. Left at its default
+                   RabbitMQ writes to /var/log/rabbitmq and refuses to start on a
+                   read-only root filesystem — the error it gives is
+                   `cannot_log_to_file ... erofs`, which does not obviously mean
+                   "mount a volume". */}}
+            - name: RABBITMQ_LOGS
+              value: "-"
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           resources:
             {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
@@ -191,6 +237,24 @@ spec:
             periodSeconds: 30
           volumeMounts:
             - { name: data, mountPath: /var/lib/rabbitmq }
+            {{- /* With a read-only root, /etc/rabbitmq has to be writable: the
+                   image's entrypoint generates conf.d/10-default-guest-user.conf
+                   there from the environment on every start. An emptyDir is
+                   correct rather than a workaround — the file is derived from
+                   the Secret above and should not outlive the container. */}}
+            - { name: config, mountPath: /etc/rabbitmq }
+            - { name: tmp, mountPath: /tmp }
+            {{- /* Even logging to stdout, Erlang writes its crash dump here
+                   when the VM dies. That dump is the only evidence of why, so
+                   the directory has to exist and be writable. */}}
+            - { name: logs, mountPath: /var/log/rabbitmq }
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -211,6 +275,7 @@ spec:
   ports:
     - { port: 5672, targetPort: amqp, name: amqp }
     - { port: 15672, targetPort: management, name: management }
+    - { port: 15692, targetPort: metrics, name: metrics }
   selector:
     app.kubernetes.io/name: rabbitmq
     app.kubernetes.io/instance: {{ .Release.Name }}

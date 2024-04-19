@@ -1,0 +1,15 @@
+# ---------------------------------------------------------------------------
+# Accepted findings.
+#
+# Every entry needs a reason and an expiry date. An exception without an expiry
+# is not an exception, it is a permanent hole that nobody will ever look at
+# again — and the day it stops being acceptable, nothing will say so.
+#
+# Empty is the correct state. A finding belongs here only when fixing it is
+# genuinely wrong, not when it is merely inconvenient.
+# ---------------------------------------------------------------------------
+misconfigurations: []
+
+vulnerabilities: []
+
+secrets: []

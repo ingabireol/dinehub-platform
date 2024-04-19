@@ -117,9 +117,18 @@ spec:
         - { protocol: TCP, port: {{ $svc.port }} }
         {{- end }}
         {{- end }}
-    {{- /* And from anywhere in the namespace for metrics scraping. */}}
+    {{- /* And from Prometheus, so metrics can be scraped.
+
+           This used to be `namespaceSelector: {}` — any pod, in any namespace.
+           It was written to let a scraper in, and it does, but the services
+           serve their API and their /actuator endpoints on the same port, so
+           what it actually allowed was every pod in the cluster reaching every
+           service's API directly, bypassing the gateway and its authentication.
+           Naming the monitoring namespace costs nothing and closes it. */}}
     - from:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoringNamespace }}
       ports:
         {{- range $name, $svc := .Values.services }}
         {{- if $svc.enabled }}
@@ -153,6 +162,49 @@ spec:
               k8s-app: kube-dns
       ports:
         - { protocol: UDP, port: 53 }
+---
+{{/*
+  The broker accepts connections from the services.
+
+  This policy was missing, and its absence was invisible for a while. Egress to
+  the broker was allowed, so the rules read as though messaging worked — but
+  default-deny denies ingress to every pod that no policy names, and nothing
+  named the broker. Existing AMQP connections were already open and kept
+  working, so smoke tests passed and the platform looked healthy. The failure
+  only appeared when a service restarted and tried to connect again: Spring's
+  rabbit health indicator timed out, readiness never came up, and the pod
+  crash-looped.
+
+  The lesson is in deploy/scripts/verify-network-policies.sh, which probes from
+  a fresh pod precisely so that an established connection cannot hide a missing
+  rule.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-broker
+  labels:
+    {{- include "dinehub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: broker
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: service
+      ports:
+        - { protocol: TCP, port: 5672 }
+    {{- /* Queue depth and the dead-letter count come from rabbitmq_prometheus
+           on 15692, and two alert rules read them. */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoringNamespace }}
+      ports:
+        - { protocol: TCP, port: 15692 }
 ---
 {{/* The database accepts connections from the services and from the backup job. */}}
 apiVersion: networking.k8s.io/v1

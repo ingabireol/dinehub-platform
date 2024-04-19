@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# Trivy — configuration scanning.
+#
+# Used by the CI `trivy-action` step and by `trivy config --config trivy.yaml .`
+# locally, so the gate behaves the same in both places.
+#
+# The one setting here that is not cosmetic is helm.set. The chart deliberately
+# refuses to render without an image tag — there is no 'latest' default, by
+# design — so Trivy's Helm scanner fails to template it and skips the chart
+# entirely. It does that with a log line and exit code 0, which means CI reports
+# a clean scan while the most security-relevant files in the repository have not
+# been read. Supplying a tag is what makes the scan real.
+# ---------------------------------------------------------------------------
+severity:
+  - HIGH
+  - CRITICAL
+
+exit-code: 1
+
+scan:
+  scanners:
+    - misconfig
+  skip-dirs:
+    - web/node_modules
+    - "**/target"
+    - .git
+
+misconfiguration:
+  include-non-failures: false
+  helm:
+    set:
+      - global.image.tag=trivy-scan
+      # The production values are the ones worth scanning: they are the only
+      # set where the hardening is actually switched on.
+    values:
+      - deploy/helm/values-prod.yaml
+
+# Findings accepted on purpose, each with a reason and an expiry, live in
+# .trivyignore.yaml. An exception with no expiry date is a decision nobody ever
+# revisits.
+ignorefile: .trivyignore.yaml

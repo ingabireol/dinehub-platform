@@ -429,13 +429,34 @@ jobs:
           done
 
       - name: Trivy config scan
+        # trivy.yaml carries the settings, including the Helm values Trivy needs
+        # to render the chart. Without them it cannot template it, skips the
+        # chart silently, and reports a clean scan of everything except the
+        # files most worth scanning. `.trivyignore.yaml` is the accepted-findings
+        # list, referenced from trivy.yaml — it is not the config file.
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: config
           scan-ref: .
-          severity: CRITICAL,HIGH
-          exit-code: '1'
-          trivy-config: .trivyignore.yaml
+          trivy-config: trivy.yaml
+
+      - name: Assert Trivy actually read the Helm chart
+        # A scan that silently skips the chart passes, so the skip is what gets
+        # checked rather than the exit code.
+        run: |
+          set -euo pipefail
+          trivy config --config trivy.yaml --format json -o /tmp/trivy.json . 2>/tmp/trivy.log || true
+          if grep -q "Failed to render Chart files" /tmp/trivy.log; then
+            echo "::error::Trivy could not render the Helm chart, so it was not scanned."
+            sed -n '/Failed to render Chart files/p' /tmp/trivy.log
+            exit 1
+          fi
+          count=$(python3 -c "import json;d=json.load(open('/tmp/trivy.json'));print(sum(1 for r in d.get('Results',[]) if 'helm' in r.get('Target','') or 'deploy/helm' in r.get('Target','')))")
+          if [ "$count" -eq 0 ]; then
+            echo "::error::Trivy produced no results for deploy/helm — the chart was not scanned."
+            exit 1
+          fi
+          echo "Trivy scanned the chart: ${count} result group(s)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Production values assert what production needs
         # These are the differences that matter, checked rather than trusted.
@@ -536,6 +557,55 @@ jobs:
           kubectl port-forward --namespace dinehub-dev svc/dinehub-api-gateway 8080:8080 &
           sleep 8
           ./deploy/scripts/smoke-test.sh --url http://localhost:8080 --verbose
+
+      - name: NetworkPolicies do what they claim
+        # The smoke test above cannot catch a missing policy: the services hold
+        # AMQP connections opened before the policies applied, and an
+        # established connection survives a rule that would refuse a new one.
+        # This probes from fresh pods, which is the only way a missing rule
+        # shows up. It exits 2 — not a failure — on a CNI that ignores
+        # NetworkPolicy, because there nothing was proved either way.
+        run: |
+          set +e
+          ./deploy/scripts/verify-network-policies.sh --env dev
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo '| **NetworkPolicies** | verified |' >> "$GITHUB_STEP_SUMMARY" ;;
+            2) echo '| **NetworkPolicies** | not enforced by this CNI — unverified |' >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo '::error::NetworkPolicy verification failed'; exit 1 ;;
+          esac
+
+      - name: Rollback fires on a broken release
+        # The deployment jobs rely on `helm upgrade --atomic --wait` putting the
+        # previous release back when the new one does not come up. That is a
+        # claim about arithmetic the chart controls — see
+        # docs/adr/0006-maxunavailable-zero.md, where it was silently false —
+        # so it is checked on every run rather than believed.
+        run: |
+          set +e
+          helm upgrade dinehub deploy/helm/dinehub \
+            --namespace dinehub-dev \
+            --values deploy/helm/values-dev.yaml \
+            --set global.image.tag=ci \
+            --set global.image.pullPolicy=Never \
+            --set defaults.probes.readiness.path=/actuator/health/this-endpoint-does-not-exist \
+            --atomic --wait --timeout 3m
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::A release whose readiness probe cannot pass was reported as a successful deploy."
+            exit 1
+          fi
+          # --atomic should have restored the previous release.
+          kubectl rollout status deployment/dinehub-order-service --namespace dinehub-dev --timeout=5m
+          probe=$(kubectl get deployment dinehub-order-service --namespace dinehub-dev \
+                    -o jsonpath='{.spec.template.spec.containers[0].readinessProbe.httpGet.path}')
+          if [ "$probe" != "/actuator/health/readiness" ]; then
+            echo "::error::The broken release was not rolled back; readiness probe is still ${probe}."
+            exit 1
+          fi
+          echo '| **Automatic rollback** | verified |' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Diagnostics on failure
         if: failure()
