@@ -22,8 +22,10 @@ graph TB
     D --> H["build images<br/>no push"]
     H --> I["Trivy image scan"]
     A --> J["helm lint<br/>kubeconform<br/>Trivy config"]
-    I --> K["deploy to a kind cluster<br/>run smoke tests"]
+    I --> K["deploy to a kind cluster<br/>smoke tests"]
     J --> K
+    K --> L["NetworkPolicies verified<br/>from fresh pods"]
+    K --> M["break a release on purpose<br/>check --atomic rolls back"]
 ```
 
 | Stage | Fails the build on |
@@ -36,8 +38,18 @@ graph TB
 | Dependency review | A new high-severity advisory |
 | Trivy image scan | CRITICAL **with a fix available** |
 | Helm lint / kubeconform | Invalid chart or manifest |
-| Trivy config scan | HIGH and above in a chart or Dockerfile |
+| Trivy config scan | HIGH and above in a chart or Dockerfile, **or** the chart being skipped |
 | Ephemeral deploy | The chart does not deploy, or smoke tests fail |
+| NetworkPolicy verification | A connection that should be refused is allowed, or one that should work is not |
+| Rollback verification | A release that cannot become Ready is reported as a successful deploy |
+
+**Why the last two exist.** Both were claims this pipeline made and did not keep.
+`helm upgrade --atomic --wait` returned success on a release whose readiness
+probe could never pass ([ADR 0006](adr/0006-maxunavailable-zero.md)), and the
+NetworkPolicies were missing an ingress rule for the broker that only broke
+things on the next restart. Neither was caught by a test; both were found by
+trying to break the system on purpose. They are now part of every run, because a
+safety net nobody tests is a safety net nobody has.
 
 **Why "CRITICAL with a fix available" rather than all CRITICALs.** Failing on
 unfixable findings makes the pipeline red for reasons nobody can act on, and

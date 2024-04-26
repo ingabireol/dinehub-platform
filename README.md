@@ -41,6 +41,7 @@ make test            # unit + integration tests, with the coverage gate
 make cluster         # local k3d cluster with dev/test/prod namespaces
 make deploy ENV=dev  # helm install into dinehub-dev
 make smoke ENV=dev   # end-to-end checks against that environment
+make observability-up # Prometheus, Grafana and Loki alongside the stack
 make help            # everything else
 ```
 
@@ -138,6 +139,51 @@ Detail, including how this runs without a permanent cluster:
 
 ---
 
+## Observability
+
+```bash
+make observability-up      # Grafana :3000, Prometheus :9090, alongside `make up`
+```
+
+Prometheus scrapes every service, Promtail ships container logs into Loki, and
+Grafana is provisioned from JSON in the repository — four dashboards (service
+overview, JVM and runtime, business, delivery and release health) and seventeen
+alert rules, each carrying an `action` annotation so an alert says what to do
+rather than only what is wrong.
+
+The piece worth knowing about: every service puts a `traceId` in the MDC and
+returns it on error responses, Promtail attaches it as structured metadata, and
+the Loki datasource turns it into a link. A customer quotes the id from an error
+page and
+
+```
+{environment="dev"} | traceId=`3f9c1e02…`
+```
+
+returns every line that request produced, in every service that touched it.
+
+[observability/README.md](observability/README.md) has the conventions — why
+colour means state and never identity, why there is never a second y-axis, and
+where cardinality is actively managed.
+
+---
+
+## What has actually been run
+
+Claims in a portfolio repository are cheap, so these were checked rather than
+asserted, and the things that turned out to be false were fixed:
+
+| Claim | How it was checked |
+| --- | --- |
+| The platform works end to end | 19/19 end-to-end and 16/16 smoke checks, against Compose **and** against a Kubernetes cluster with NetworkPolicies enforced |
+| A failed release rolls back | A release with an unsatisfiable readiness probe was deployed on purpose. It did **not** roll back the first time — [ADR 0006](docs/adr/0006-maxunavailable-zero.md) — and does now, verified on every CI run |
+| NetworkPolicies isolate the services | `deploy/scripts/verify-network-policies.sh`, 7/7. It probes from fresh pods, because an established connection hides a missing rule — which is how a missing broker policy went unnoticed |
+| Containers are hardened | All 11 run non-root with a read-only root filesystem; Trivy reports zero HIGH or CRITICAL — after being made to read the Helm chart, which it had been silently skipping |
+| The dashboards show something | Every query executed against a live Prometheus. The latency panels returned nothing, because the services were exporting summaries rather than histograms |
+| Logs are searchable by trace | One traceId returned ten lines across four services, and the Loki label index holds only the six bounded labels it should |
+
+---
+
 ## Repository layout
 
 ```
@@ -148,7 +194,8 @@ deploy/
   helm/              Umbrella chart + one values file per environment
   k8s/bootstrap/     Namespaces, ingress, platform components
   scripts/           Cluster creation, smoke tests, rollback
-observability/       Prometheus rules, Grafana dashboards, Loki
+observability/       Prometheus + alerts, Grafana dashboards and provisioning,
+                     Loki, Promtail, Alertmanager, and a Compose overlay to run them
 .github/workflows/   ci.yml, cd.yml, security-nightly.yml
 docs/                Architecture, pipeline, environments, runbooks, ADRs
 ```
@@ -182,7 +229,8 @@ code are identical. [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
 | [ROLLBACK_RUNBOOK.md](docs/ROLLBACK_RUNBOOK.md) | Automatic and manual rollback, and database migrations |
 | [INCIDENT_RUNBOOK.md](docs/INCIDENT_RUNBOOK.md) | Triage using the dashboards and logs |
 | [SECURITY.md](SECURITY.md) | How secrets are handled in each environment |
-| [adr/](docs/adr/) | Why Kubernetes Services over Eureka, build-once, namespaces, RabbitMQ |
+| [observability/README.md](observability/README.md) | The metrics, dashboards and logging stack, and the conventions behind them |
+| [adr/](docs/adr/) | Why Kubernetes Services over Eureka, build-once, namespaces, RabbitMQ, database-per-service, and why `maxUnavailable` is zero |
 
 ---
 

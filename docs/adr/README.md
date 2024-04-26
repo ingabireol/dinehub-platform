@@ -15,3 +15,4 @@ applying, which is exactly when knowing the original reasoning matters most.
 | [0003](0003-namespace-per-environment.md) | One cluster, a namespace per environment |
 | [0004](0004-rabbitmq-for-domain-events.md) | RabbitMQ for domain events |
 | [0005](0005-database-per-service.md) | A database per service |
+| [0006](0006-maxunavailable-zero.md) | `maxUnavailable: 0`, because `helm --wait` depends on it |

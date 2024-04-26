@@ -72,7 +72,13 @@ database — enforced by the credential and, independently, by a NetworkPolicy.
 - Every image runs as UID 10001, never root. The Dockerfile creates the account
   and the Kubernetes `securityContext` asserts the same UID, so the two cannot
   disagree.
-- `readOnlyRootFilesystem: true` with an explicit `emptyDir` for `/tmp`.
+- `readOnlyRootFilesystem: true` with an explicit `emptyDir` for `/tmp`. This
+  includes PostgreSQL and RabbitMQ, which took more care than the services: each
+  needs a small, named set of writable paths, and RabbitMQ needs its
+  `/etc/rabbitmq` seeded from the image by an initContainer — mounting an empty
+  volume there removes the shipped `enabled_plugins`, which switches off the
+  management UI and the metrics endpoint while the broker still starts and
+  reports itself healthy.
 - `allowPrivilegeEscalation: false`, all capabilities dropped.
 - Multi-stage builds: the runtime image has a JRE and the application layers,
   with no compiler, no build tools and no package manager cache.
@@ -94,6 +100,14 @@ The Trivy gate is "CRITICAL **with a fix available**" on purpose. Failing on
 unfixable CRITICALs means the pipeline is red for reasons nobody can act on,
 which trains people to merge past it — and then it catches nothing.
 
+The config scan has a step after it that checks Trivy actually read the Helm
+chart. It did not, for a while: the chart refuses to render without an image tag
+and Trivy's Helm scanner cannot supply one, so it logged a line, skipped the
+chart and exited zero. A green scan that skipped the files most worth scanning
+is worse than no scan, because it is believed. `trivy.yaml` supplies the tag and
+the production values; the following step fails the build if the chart produces
+no results.
+
 Nightly scans run against the deployed images, not just the PR, because a
 dependency that was clean at merge time may not be clean next week.
 
@@ -103,7 +117,16 @@ dependency that was clean at merge time may not be clean next week.
 
 - NetworkPolicies default-deny in every namespace. The gateway is the only
   workload reachable from the ingress; each service reaches only its own database
-  and RabbitMQ.
+  and RabbitMQ. Only the monitoring namespace may reach a service's port
+  directly — the services serve their API and `/actuator` on the same port, so a
+  wildcard there is not a scrape exception, it is an open API.
+- `deploy/scripts/verify-network-policies.sh` proves it, and CI runs it on every
+  ephemeral deploy. It probes from **fresh** pods, because an AMQP connection
+  opened before a policy applied keeps working after it — which is how a missing
+  ingress rule for the broker survived a passing smoke test, and only surfaced
+  when a service restarted and could not reconnect. The script also refuses to
+  report success on a CNI that ignores NetworkPolicy, where nothing is proved
+  either way.
 - TLS terminates at the ingress.
 - No service exposes a NodePort or a LoadBalancer.
 

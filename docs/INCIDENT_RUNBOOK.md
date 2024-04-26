@@ -78,15 +78,22 @@ kubectl describe "deploy/dinehub-${SVC}" --namespace dinehub-prod
 kubectl top pods --namespace dinehub-prod | grep "$SVC"
 ```
 
-**Logs are JSON.** To follow a single request across services, take the trace id
-from the user's error message and query Loki:
+**Follow one request, not one service.** Take the trace id from the user's error
+message and query Loki:
 
 ```
-{namespace="dinehub-prod"} | json | traceId="a3f91c2b4d5e6f70"
+{environment="prod"} | traceId=`a3f91c2b4d5e6f70`
 ```
 
-That one query returns everything that happened to that request, across every
-service and every queue hop. It is the single most useful thing in this runbook.
+Backticks, and no `| json` — Promtail has already parsed the line and attached
+`traceId` as structured metadata, so this is an indexed lookup rather than a
+parse of every line in the range. That one query returns everything that
+happened to that request, across every service and every queue hop. It is the
+single most useful thing in this runbook.
+
+The same query works against the local Compose stack with
+`{environment="local"}`, even though the services log human-readable text there
+rather than JSON — the collector handles both.
 
 | Observation | Cause |
 | --- | --- |
@@ -207,10 +214,14 @@ Work down the stack. Each step rules out a layer:
 
 ```bash
 # 1. Is the JVM collecting instead of serving?
-#    Grafana → JVM → GC time. Above 10% is your answer.
+#    Grafana → DineHub → JVM and runtime → "GC pause time".
+#    Above 10% of wall clock is your answer. "Heap used after collection"
+#    on the same dashboard says whether it is a leak or just a busy heap.
 
 # 2. Are threads waiting for a database connection?
-#    Grafana → Connection pool. Any sustained "pending" is your answer.
+#    Grafana → DineHub → JVM and runtime → "Threads waiting for a connection".
+#    Any sustained value above zero is your answer: the request is blocked on
+#    the pool, not on the database.
 
 # 3. Is the database slow?
 kubectl exec deploy/dinehub-postgres --namespace dinehub-prod -- \
