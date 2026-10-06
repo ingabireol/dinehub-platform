@@ -1,6 +1,5 @@
 # DineHub Platform
 
-> **Portfolio project. All data, hostnames and credentials are fictitious.**
 
 A restaurant ordering platform built as microservices, with a complete CI/CD
 pipeline that builds, tests, scans and deploys to **dev**, **test** and **prod**.
