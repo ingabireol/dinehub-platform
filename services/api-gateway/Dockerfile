@@ -44,7 +44,7 @@ RUN cp services/api-gateway/target/*.jar /build/app.jar && \
     java -Djarmode=tools -jar /build/app.jar extract --destination /build/extracted
 
 # --- Runtime ---------------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 # A real system account with a fixed UID, so the Kubernetes securityContext can
 # assert runAsUser: 10001 and the two cannot disagree.
