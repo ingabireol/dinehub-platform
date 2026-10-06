@@ -303,7 +303,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build (no push)
         uses: docker/build-push-action@v6
@@ -361,7 +361,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - uses: docker/build-push-action@v6
         with:
@@ -504,7 +504,7 @@ jobs:
           cluster_name: dinehub-ci
           wait: 120s
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build every image into the cluster
         # Built locally and side-loaded, so the test needs no registry and no
