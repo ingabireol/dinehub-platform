@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 
 # --- Build -----------------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 WORKDIR /build
 
 # POMs first, as their own layer. They change far less often than source, so
