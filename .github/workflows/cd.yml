@@ -48,7 +48,7 @@ jobs:
       semver: ${{ steps.v.outputs.semver }}
       changelog: ${{ steps.v.outputs.changelog }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # tags and history, for the version and the changelog
 
@@ -107,7 +107,7 @@ jobs:
     outputs:
       digests: ${{ steps.collect.outputs.digests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v3
 
@@ -257,7 +257,7 @@ jobs:
       contents: write     # creating a release
       packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
