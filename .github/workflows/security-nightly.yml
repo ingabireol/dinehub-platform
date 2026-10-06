@@ -131,7 +131,7 @@ jobs:
           path: target/dependency-check-report.*
           retention-days: 30
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: npm
