@@ -50,7 +50,7 @@
     <testcontainers.version>1.20.4</testcontainers.version>
     <logstash-encoder.version>8.0</logstash-encoder.version>
 
-    <jacoco.version>0.8.12</jacoco.version>
+    <jacoco.version>0.8.15</jacoco.version>
     <!-- The coverage gate. 70% is the number the pipeline enforces; it is set
          here rather than in CI so that `mvn verify` locally fails for the same
          reason the pipeline does. -->
